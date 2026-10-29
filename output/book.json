@@ -1,0 +1,478 @@
+[
+  {
+    "Book": {
+      "id": 1,
+      "Name": "test_img",
+      "Characters": [
+        {
+          "Name": "Narrator",
+          "img": ""
+        },
+        {
+          "Name": "Lisa",
+          "img": ""
+        },
+        {
+          "Name": "Corduroy",
+          "img": ""
+        },
+        {
+          "Name": "Wilbur",
+          "img": ""
+        },
+        {
+          "Name": "Unknown",
+          "img": ""
+        },
+        {
+          "Name": "Lisa's mother",
+          "img": ""
+        }
+      ],
+      "Pages": {
+        "Cover": {
+          "img": "IMG_0003_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "and then he ate my tie."
+            }
+          ]
+        },
+        "PageOne": {
+          "img": "IMG_0004_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "I said,"
+            },
+            {
+              "Reading": false,
+              "Character": "Unknown",
+              "Dialogue": "\"Don't do that.\""
+            }
+          ]
+        },
+        "PageTwo": {
+          "img": "IMG_0005_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "But he ate my hat,"
+            }
+          ]
+        },
+        "PageThree": {
+          "img": "IMG_0006_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "and then he ate my scarf."
+            }
+          ]
+        },
+        "PageFour": {
+          "img": "IMG_0007_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "He ate on and on. He ate the lawn,"
+            }
+          ]
+        },
+        "PageFive": {
+          "img": "IMG_0008_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "and then he ate my shoe."
+            }
+          ]
+        },
+        "PageSix": {
+          "img": "IMG_0009_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "It got stuck in his throat so I gave him some soap."
+            }
+          ]
+        },
+        "PageSeven": {
+          "img": "IMG_0010_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "But when he felt better, he ate my sweater."
+            }
+          ]
+        },
+        "PageEight": {
+          "img": "IMG_0011_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Late one summer afternoon Lisa and her mother took their laundry to the laundromat. As always on such trips Lisa carried along her toy bear, Corduroy."
+            }
+          ]
+        },
+        "PageNine": {
+          "img": "IMG_0012_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "The laundromat was a very busy place at this hour."
+            }
+          ]
+        },
+        "PageTen": {
+          "img": "IMG_0013_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Lisa",
+              "Dialogue": "\"Now, Corduroy, you sit right here and wait for me,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Lisa said."
+            },
+            {
+              "Reading": false,
+              "Character": "Lisa",
+              "Dialogue": "\"I'm going to help with our wash.\""
+            }
+          ]
+        },
+        "PageEleven": {
+          "img": "IMG_0014_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Corduroy waited patiently. Then he suddenly perked up his ears."
+            }
+          ]
+        },
+        "PageTwelve": {
+          "img": "IMG_0015_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Lisa's mother was saying,"
+            },
+            {
+              "Reading": false,
+              "Character": "Lisa's mother",
+              "Dialogue": "\"Be sure to take everything out of your pockets, Lisa dear. You don't want your precious things to get all wet and soapy.\""
+            }
+          ]
+        },
+        "PageThirteen": {
+          "img": "IMG_0016_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Corduroy",
+              "Dialogue": "\"Pockets?\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Corduroy to himself."
+            },
+            {
+              "Reading": false,
+              "Character": "Corduroy",
+              "Dialogue": "\"I don't have a pocket!\""
+            }
+          ]
+        },
+        "PageFourteen": {
+          "img": "IMG_0017_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "He slid off the chair."
+            },
+            {
+              "Reading": false,
+              "Character": "Corduroy",
+              "Dialogue": "\"I must go find something to make a pocket out of,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "he said, and he began to look around."
+            }
+          ]
+        },
+        "PageFifteen": {
+          "img": "IMG_0018_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "First he came to a pile of fancy towels and washcloths, but nothing was the right size or color."
+            }
+          ]
+        },
+        "PageSixteen": {
+          "img": "IMG_0019_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Then he saw a huge stack of colorful clothes in a laundry bag."
+            },
+            {
+              "Reading": false,
+              "Character": "Corduroy",
+              "Dialogue": "\"There ought to be something in there to make a pocket out of,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "he said."
+            }
+          ]
+        },
+        "PageSeventeen": {
+          "img": "IMG_0020_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Wilbur looked out the window again. Standing in the soft glow of moonlight was a baby dinosaur swishing its long tail through the grass. It can't be ... thought Wilbur. Gently he opened the window to the warm night air. The dinosaur just blinked its eyes."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"My very own dinosaur,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur as he put on his slippers and climbed out the window."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"Just wait till I tell everyone. I'll put you in the barn with Greta. I'm sure she won't mind. She's just a cow.\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "He coaxed the dinosaur to the barn and quickly shut the door behind it. Immediately it began to howl, waking up Greta and all the chickens. The barn was in an uproar of mooing and clucking until Wilbur finally let the dinosaur out."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"This won't do at all,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"I'd better take you home.\""
+            }
+          ]
+        },
+        "PageEighteen": {
+          "img": "IMG_0021_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Wilbur led the dinosaur across the pasture toward the woods."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"This is no place for a dinosaur, anyway,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"You would get lonely here with no other dinosaurs around. And besides, pretty soon you will outgrow the barn. I will take you back to the Jurassic period where you belong.\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "He hugged the dinosaur as it thumped its tail on the ground."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"You need a name,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"I will call you Gideon, after Gideon Mantell. He discovered the first dinosaur fossil.\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Wilbur turned and walked into the shadows of the woods."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"Follow me, Gideon,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "he said."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"We have one hundred forty million years to go through.\""
+            }
+          ]
+        },
+        "PageNineteen": {
+          "img": "IMG_0022_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "Gideon and Wilbur followed the winding path down the mountain. Far ahead lay a wide green valley dotted with shimmering lakes."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"Maybe that's the Jurassic period down there,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur. Then he saw some Triceratops sleeping peacefully in the sun."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"Oh, Gideon,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "he whispered,"
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"I *have* to get a closer look.\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "But Gideon would not leave the path."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"They won't hurt you, they're asleep,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur and finally convinced Gideon to follow. They crept slowly toward the gigantic horned dinosaurs. One opened a sleepy eye and suddenly rose to its feet. It snorted and began to charge. Wilbur and Gideon escaped into the cliffs."
+            },
+            {
+              "Reading": false,
+              "Character": "Wilbur",
+              "Dialogue": "\"Sorry, Gideon, this time it was my fault. Well, we're safe now,\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "said Wilbur as they rested on a rocky ledge."
+            }
+          ]
+        },
+        "PageTwenty": {
+          "img": "IMG_0023_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "On Sundays, Bram and Papa took a walk to the sea. Many people knew them and they waved to Bram along the way. Papa bought raw herring from a little stand with a striped awning, and they dipped the small fish in chopped onions and ate them."
+            },
+            {
+              "Reading": false,
+              "Character": "Unknown",
+              "Dialogue": "\"Ah!\""
+            },
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "they said together."
+            }
+          ]
+        },
+        "PageTwentyOne": {
+          "img": "IMG_0024_unwarp.png",
+          "question": "",
+          "text": [
+            {
+              "Reading": false,
+              "Character": "Narrator",
+              "Dialogue": "At night Bram slept in his own little bed, on a straw mattress, tucked in tight with Oma's quilt."
+            }
+          ]
+        }
+      }
+    }
+  }
+]
