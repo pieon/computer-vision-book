@@ -1,0 +1,8 @@
+body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+main { max-width: 900px; margin: 0 auto; display: grid; gap: 12px; }
+video, img { width: 100%; border-radius: 8px; background: #000; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.status { flex: 1; }
+button, a { padding: 10px 16px; border: 0; border-radius: 6px; background: #2e7d32; color: #fff; font-size: 16px; text-decoration: none; cursor: pointer; }
+button:disabled { background: #555; cursor: default; }
+[hidden] { display: none !important; }
