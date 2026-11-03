@@ -3,7 +3,6 @@ import os
 import shutil
 
 from fastapi import APIRouter, HTTPException, Path
-
 from backend.config import IMG_DIR
 from backend.db import BOOK_ID, books, lock
 

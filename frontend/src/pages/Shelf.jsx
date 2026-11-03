@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getJson, remove as removeUrl } from '../api.js'
 import { SearchIcon, SortIcon } from '../components/icons.jsx'
 import TabBar from '../components/TabBar.jsx'
+import Book from './Book.jsx'
 
 // Raw Book2 JSON of one book from MongoDB (server.py GET /books/<id>).
 function BookJson({ id, onBack }) {
@@ -44,6 +45,7 @@ export default function Shelf({ onHome, onLibrary, onScan }) {
   const [books, setBooks] = useState(null) // null = loading
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) // book whose JSON is shown
+  const [readId, setReadId] = useState(null) // book open in the reader
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
   const [menuFor, setMenuFor] = useState(null) // book whose options menu is open
@@ -75,6 +77,7 @@ export default function Shelf({ onHome, onLibrary, onScan }) {
 
   // the shelf stays mounted underneath, so Back doesn't reload the list
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
+  if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
 
   const q = query.trim().toLowerCase()
   const shown = (books ?? []).filter((b) => b.name.toLowerCase().includes(q)) // server sends newest first
@@ -104,9 +107,9 @@ export default function Shelf({ onHome, onLibrary, onScan }) {
         {shown.map((b) => (
           <div className="col-4 col-md-3" key={b.id}>
             <div className="library-book">
-              {/* tap: details; right-click / long-press on desktop browsers: options */}
+              {/* tap: read; right-click / long-press on desktop browsers: options */}
               <button type="button" className="library-cover" aria-label={`${b.name}, ${b.pages} pages`}
-                onClick={() => setOpenId(b.id)} onContextMenu={(e) => { e.preventDefault(); setMenuFor(b) }}>
+                onClick={() => setReadId(b.id)} onContextMenu={(e) => { e.preventDefault(); setMenuFor(b) }}>
                 <Cover book={b} />
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
