@@ -8,7 +8,7 @@ import torch
 from unwarp.utils import IMG_SIZE, bilinear_unwarping, load_model
 
 
-def unwarp_img(model, device, img_path, img_size, out_path):
+def unwarp_img(model, device, img_path, img_size, out_path, flip=True):
     """
     Unwarp a document image using the given model.
     """
@@ -16,7 +16,8 @@ def unwarp_img(model, device, img_path, img_size, out_path):
     img = cv2.imread(img_path)
     if img is None:
         raise FileNotFoundError(f"Could not read image: {img_path}")
-    img = cv2.flip(img, 1)  # mirror left-right before unwarping
+    if flip:
+        img = cv2.flip(img, 1)  # mirror left-right before unwarping
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
     inp = torch.from_numpy(cv2.resize(img, img_size).transpose(2, 0, 1)).unsqueeze(0)
 

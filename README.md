@@ -17,7 +17,10 @@ output/                 generated, gitignored
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements_demo.txt
+python -c "import nltk; nltk.download('wordnet')"   # people/animal check for speaker names
 ```
+MongoDB (books are stored in `bookscanner.books`): `brew tap mongodb/brew && brew install mongodb-community && brew services start mongodb-community`. Set `MONGO_URL=...` in `.env` if it's not on `mongodb://localhost:27017`.
+
 Put `LLM_API_KEY=...` in `.env` (key from llm.arc.vt.edu → Settings → Account → API keys).
 
 ## Run (from the repo root)
@@ -27,4 +30,5 @@ python -m unwarp.unwarp_flip --img-path photo.jpg      # flip + unwarp one image
 python -m ocr.ocr page.png                             # OCR one image
 python -m book.book_builder output --out book.json     # build a book from unwarped pages
 python -m ocr.test_ocr                                 # live API tests
+python server.py                                       # backend for camera/ (pages -> MongoDB, images -> output/books/<id>/)
 ```

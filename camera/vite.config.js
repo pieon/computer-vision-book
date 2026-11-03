@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), basicSsl()],
+  server: {
+    host: true, // listen on the LAN, not just localhost
+    // python server.py; same origin, so no CORS / mixed content
+    proxy: { '/scan': 'http://localhost:8000', '/books': 'http://localhost:8000', '/images': 'http://localhost:8000', '/stats': 'http://localhost:8000' },
+  },
 })

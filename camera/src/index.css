@@ -1,8 +1,119 @@
 body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background: #111; color: #eee; }
-main { max-width: 900px; margin: 0 auto; display: grid; gap: 12px; }
-video, img { width: 100%; border-radius: 8px; background: #000; }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.status { flex: 1; }
-button, a { padding: 10px 16px; border: 0; border-radius: 6px; background: #2e7d32; color: #fff; font-size: 16px; text-decoration: none; cursor: pointer; }
-button:disabled { background: #555; cursor: default; }
 [hidden] { display: none !important; }
+pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; border-radius: 8px; }
+@keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
+
+/* Shelf, styled after Kindle's library. Every rule starts with .library so it can't leak into other screens. */
+.library { --lib-surface: #232323; --lib-line: #3a3a3a; --lib-muted: #9a9a9a; --lib-accent: #5b9bff; --lib-danger: #ff6b6b;
+  max-width: 900px; margin: 0 auto; padding-bottom: 120px; }
+.library button { background: none; border: 0; border-radius: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.library button:focus-visible, .library input:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 2px; }
+.library .library-head { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 18px; }
+.library .library-head h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2.5rem; letter-spacing: -0.01em; }
+.library .library-round { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--lib-surface); border: 1px solid var(--lib-line); }
+.library .library-search { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; padding: 12px 18px;
+  border-radius: 999px; background: var(--lib-surface); border: 1px solid var(--lib-line); color: var(--lib-muted); }
+.library .library-search input { flex: 1; min-width: 0; border: 0; background: none; color: #eee; font-size: 1.1rem; outline: none; }
+.library .library-search input::placeholder { color: var(--lib-muted); }
+.library .library-note { color: var(--lib-muted); }
+
+.library .library-book { position: relative; }
+.library .library-cover { display: block; width: 100%; aspect-ratio: 3 / 4; overflow: hidden; background: #000;
+  box-shadow: 0 2px 10px #0009; }
+.library .library-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; display: block; }
+.library .library-tag { position: absolute; top: 0; right: 0; padding: 3px 7px; background: #111; color: #eee; font-size: 0.75rem; }
+.library .library-more { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; background: #000c; color: #fff; font-size: 0.6rem; letter-spacing: 1px; }
+/* placeholder: white document with a blue band and the name on a dark strip, like Kindle's DOC tile */
+.library .cover-doc { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: #fff; }
+.library .cover-doc-tag { margin-top: 14%; width: 70%; padding: 4% 8%; background: #4466b8; color: #fff; font-weight: 700; font-size: clamp(0.8rem, 3vw, 1.6rem); }
+.library .cover-doc-lines { flex: 1; margin: 12% 14%; background: repeating-linear-gradient(#c8c8c8 0 6px, transparent 6px 16px); }
+.library .cover-doc-name { padding: 8px 44px 8px 8px; background: #444; /* right: room for the ••• button */ color: #fff; font-size: 0.8rem; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* options menu: frosted rounded card over a dimmed screen */
+.library .library-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: #0007; }
+.library .library-menu { width: min(360px, 100%); padding: 10px 0; border-radius: 28px; background: rgba(64, 64, 64, 0.88);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 20px 60px #000a; }
+.library .library-menu-title { padding: 8px 28px 12px; color: var(--lib-muted); font-size: 0.9rem; border-bottom: 1px solid #ffffff1f;
+  margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library .library-menu button { display: block; width: 100%; padding: 14px 28px; text-align: left; font-size: 1.25rem; color: #fff; }
+.library .library-menu button:hover { background: #ffffff14; }
+.library .library-menu .library-danger { color: var(--lib-danger); }
+
+/* floating tab bar (TabBar.jsx), shared by Home and Library */
+.tabbar { position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 10; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 6px; border-radius: 999px; background: rgba(38, 38, 38, 0.9);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #ffffff14; box-shadow: 0 8px 30px #000a; }
+.tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 22px; border: 0;
+  border-radius: 999px; background: none; color: #ccc; font-size: 0.85rem; }
+.tabbar button:focus-visible { outline: 2px solid #5b9bff; outline-offset: 2px; }
+.tabbar .tabbar-active { background: #141414; color: #5b9bff; cursor: default; }
+
+/* Home (Home.jsx). Purple accent #9d73e0 passes the dataviz validator on the #1c1b22 card surface. */
+.home { --home-surface: #1c1b22; --home-line: #34313f; --home-muted: #a29fae; --home-accent: #9d73e0; --home-track: #3a2f52;
+  max-width: 640px; margin: 0 auto; padding-bottom: 120px; display: grid; gap: 16px; }
+.home .home-title { margin: 8px 0 4px; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2.5rem; }
+.home .home-card { padding: 20px; border-radius: 24px; background: var(--home-surface); border: 1px solid var(--home-line); }
+.home h2 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.home .home-sub { margin: 4px 0 0; color: var(--home-muted); }
+.home .home-sub strong { color: #eee; }
+.home .home-sub-chart { margin-top: 20px; font-size: 1rem; font-weight: 600; color: #eee; }
+.home .home-book { margin: 6px 0 0; font-weight: 600; }
+.home .home-days { display: grid; grid-template-columns: repeat(7, 1fr); margin: 16px 0 0; padding: 0; list-style: none; }
+.home .home-days li { display: grid; justify-items: center; gap: 6px; color: var(--home-muted); font-size: 0.9rem; }
+.home .home-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--home-line); }
+.home .home-dot-on { background: var(--home-accent); border-color: var(--home-accent); }
+.home .home-today { color: #eee; font-weight: 700; }
+.home .home-today .home-dot { outline: 2px solid #eee; outline-offset: 2px; }
+.home .home-chart { position: relative; margin-top: 8px; }
+.home > * { min-width: 0; } /* grid items may shrink below the chart's first-drawn width */
+.home .home-chart svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
+.home .home-chart svg:focus-visible { outline: 2px solid var(--home-accent); outline-offset: 4px; border-radius: 4px; }
+.home .home-grid { stroke: var(--home-line); stroke-width: 1; }
+.home .home-axis { fill: var(--home-muted); font-size: 11px; }
+.home .home-crosshair { stroke: var(--home-muted); stroke-width: 1; }
+.home .home-line { fill: none; stroke: var(--home-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.home .home-point { fill: var(--home-accent); stroke: var(--home-surface); stroke-width: 2; }
+.home .home-tip { position: absolute; top: 18px; display: grid; padding: 6px 10px; border-radius: 8px;
+  background: #2b2935; border: 1px solid var(--home-line); white-space: nowrap; pointer-events: none; font-size: 0.85rem; }
+.home .home-tip span { color: var(--home-muted); }
+.home .home-note { margin: 8px 0 0; color: var(--home-muted); font-size: 0.9rem; }
+.home .home-meter { height: 12px; margin-top: 12px; border-radius: 999px; background: var(--home-track); overflow: hidden; }
+.home .home-meter span { display: block; height: 100%; border-radius: 999px; background: var(--home-accent); }
+
+/* Scanner (Scanner.jsx), same dark surfaces and purple accent as Home. The page is exactly one screen tall:
+   the camera box takes the space between header and controls, at the camera's own shape (--ratio). */
+.scan { --scan-line: #34313f; --scan-muted: #a29fae; --scan-accent: #9d73e0; --scan-danger: #ff6b6b;
+  height: calc(100dvh - 32px); max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.scan button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.scan button:focus-visible { outline: 2px solid var(--scan-accent); outline-offset: 3px; }
+.scan button:disabled { opacity: 0.4; cursor: default; }
+.scan .scan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.scan .scan-head h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2rem; }
+.scan .scan-count { margin: 0; color: var(--scan-muted); }
+.scan .scan-count strong { color: #eee; }
+.scan .scan-status { margin: -6px 0 0; color: var(--scan-muted); font-size: 0.8rem; }
+.scan .scan-guide { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1; padding: 12px 16px; border-radius: 16px;
+  background: rgba(20, 18, 28, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid #ffffff1f;
+  color: #fff; text-align: center; pointer-events: none; animation: guide-in 0.3s ease-out; }
+.scan .scan-guide-text { margin: 0; font-size: 1.1rem; font-weight: 600; }
+@keyframes guide-in { from { opacity: 0; transform: translateY(-6px); } }
+.scan .scan-stage { flex: 1; min-height: 0; container-type: size; display: grid; place-items: center; }
+.scan .scan-view { position: relative; overflow: hidden; border-radius: 20px; background: #000; border: 1px solid var(--scan-line);
+  width: min(100cqw, calc(100cqh * var(--ratio))); height: min(100cqh, calc(100cqw / var(--ratio))); }
+.scan .scan-view video, .scan .scan-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan .scan-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: flash 0.5s ease-out forwards; }
+.scan .scan-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 84px; padding: 8px 12px;
+  border-radius: 999px; background: rgba(38, 38, 38, 0.9); border: 1px solid #ffffff14; box-shadow: 0 8px 30px #000a; }
+.scan .scan-cancel { justify-self: start; padding: 10px 16px; border-radius: 999px; color: var(--scan-danger); font-weight: 600; }
+.scan .scan-done { justify-self: end; padding: 10px 22px; border-radius: 999px; background: var(--scan-accent); color: #140f1f; font-weight: 700; }
+.scan .scan-shutter { width: 64px; height: 64px; border-radius: 50%; border: 4px solid #eee; display: grid; place-items: center; }
+.scan .scan-shutter::after { content: ""; width: 46px; height: 46px; border-radius: 50%; background: #eee; }
+.scan .scan-shutter:active::after { transform: scale(0.92); }
+.scan .scan-reading { color: var(--scan-muted); white-space: nowrap; }
+.scan .scan-retake { padding: 12px 24px; border-radius: 999px; background: var(--scan-danger); color: #1a0d0d; font-weight: 700; }
+.scan .scan-toast { position: fixed; left: 50%; bottom: 120px; z-index: 10; transform: translateX(-50%); padding: 10px 20px;
+  border-radius: 999px; background: rgba(64, 64, 64, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }
