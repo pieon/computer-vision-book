@@ -13,6 +13,6 @@ for feature in (scan, books, stats, listen, tts):
     app.include_router(feature.router)
 
 os.makedirs(IMG_DIR, exist_ok=True)
-# page images by URL, e.g. /images/<id>/page_001.png (the shelf uses page 1 as the cover); StaticFiles blocks ../
-# ponytail: full-size PNG as the cover; serve small thumbnails if the shelf gets slow with many books
+# page images by URL, e.g. /images/<id>/page_001.png (the library uses page 1 as the cover); StaticFiles blocks ../
+# ponytail: full-size PNG as the cover; serve small thumbnails if the library gets slow with many books
 app.mount("/images", StaticFiles(directory=IMG_DIR), name="images")

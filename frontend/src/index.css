@@ -3,7 +3,7 @@ body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background:
 pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; border-radius: 8px; }
 @keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
 
-/* Shelf, styled after Kindle's library. Every rule starts with .library so it can't leak into other screens. */
+/* Library, styled after Kindle's library. Every rule starts with .library so it can't leak into other screens. */
 .library { --lib-surface: #232323; --lib-line: #3a3a3a; --lib-muted: #9a9a9a; --lib-accent: #5b9bff; --lib-danger: #ff6b6b;
   max-width: 900px; margin: 0 auto; padding-bottom: 120px; }
 .library button { background: none; border: 0; border-radius: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
@@ -122,8 +122,9 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader { max-width: 900px; margin: 0 auto; }
 .reader .reader-text { font-family: Georgia, "Times New Roman", serif; font-size: 1.4rem; line-height: 1.6; margin-bottom: 24px; }
 /* one card per line, speaker on top; characters get an accent bar, the narrator stays plain */
-.reader .reader-line { padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; background: #1c1c1c; border-left: 4px solid #5b9bff; }
+.reader .reader-line { padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; background: #1c1c1c; border-left: 4px solid #5b9bff; opacity: 0.55; transition: opacity 0.2s, background 0.2s; }
 .reader .reader-line.reader-narrator { border-left-color: #555; }
+.reader .reader-line.reader-current { opacity: 1; background: #26324a; }
 .reader .reader-line p { margin: 0; }
 .reader .reader-speaker { display: block; font-family: system-ui, sans-serif; font-size: 0.75rem; font-weight: 600;
   letter-spacing: 0.05em; text-transform: uppercase; color: #9a9a9a; }

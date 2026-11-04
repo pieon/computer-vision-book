@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { nanoid } from 'nanoid'
 import Home from './pages/Home.jsx'
 import Scanner from './pages/Scanner.jsx'
-import Shelf from './pages/Shelf.jsx'
+import Library from './pages/Library.jsx'
 
 export default function App() {
   const [screen, setScreen] = useState('home') // tab: 'home' | 'library'
@@ -13,5 +13,5 @@ export default function App() {
   }
 
   const nav = { onHome: () => setScreen('home'), onLibrary: () => setScreen('library'), onScan: () => setBookId(nanoid(10)) }
-  return screen === 'library' ? <Shelf {...nav} /> : <Home {...nav} />
+  return screen === 'library' ? <Library {...nav} /> : <Home {...nav} />
 }

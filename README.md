@@ -13,7 +13,7 @@ backend/                FastAPI server: python -m backend
   pipeline/             processing, no HTTP or DB: unwarp/ (UVDoc), ocr.py, book/ (lines + speakers -> JSON)
 frontend/               React + Vite PWA: npm run dev
   src/api.js            every backend request goes through here
-  src/pages/            one screen each: Home, Shelf, Scanner
+  src/pages/            one screen each: Home, Library, Book, Scanner
   src/components/       shared pieces: TabBar, icons
 scripts/build_book.py   offline batch: data/test_img/ -> output/ -> output/book.json
 weights/best_model.pkl  unwarp model weights

@@ -41,7 +41,7 @@ function Cover({ book }) {
 }
 
 // Kindle-style library of scanned books from MongoDB (server.py GET /books).
-export default function Shelf({ onHome, onLibrary, onScan }) {
+export default function Library({ onHome, onLibrary, onScan }) {
   const [books, setBooks] = useState(null) // null = loading
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) // book whose JSON is shown
@@ -75,7 +75,7 @@ export default function Shelf({ onHome, onLibrary, onScan }) {
     }
   }
 
-  // the shelf stays mounted underneath, so Back doesn't reload the list
+  // the library stays mounted underneath, so Back doesn't reload the list
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
   if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
 
@@ -94,7 +94,7 @@ export default function Shelf({ onHome, onLibrary, onScan }) {
 
       <label className="library-search">
         {SearchIcon}
-        <input type="search" placeholder="Search your shelf" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input type="search" placeholder="Search your library" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
 
       {error && <div className="alert alert-danger">Couldn't load books: {error}</div>}

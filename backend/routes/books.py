@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.get("/books")
 def list_books():
-    """Shelf: newest first, just what a book tile needs (not the texts or pages); cover = page 1's image file."""
+    """Library: newest first, just what a book tile needs (not the texts or pages); cover = page 1's image file."""
     return list(books.aggregate([
         {"$sort": {"createdAt": -1}},
         {"$project": {"_id": 0, "id": "$_id", "name": {"$first": "$book.Book.Name"},

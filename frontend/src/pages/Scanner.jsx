@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { remove, request } from '../api.js'
+import { startCamera } from '../camera.js'
 
 // Motion score = % of pixels whose brightness changed by more than PIXEL_T since the last frame. Sensor noise and
 // light flicker move pixels only a few levels, so they don't count; that keeps "still" near 0% on any camera.
@@ -57,28 +58,19 @@ export default function Scanner({ bookId, onDone, onCancel }) {
 
   // Start the camera once; stop it when the component unmounts.
   useEffect(() => {
-    let stream
-    let cancelled = false
-    navigator.mediaDevices
+    const video = videoRef.current
+    return startCamera(
+      video,
       // front camera on phones/tablets; laptops just use the webcam (not `exact`, which would fail there)
       // 4:3 matches the sensor, so nothing is cropped; ask high and the camera gives its max
-      .getUserMedia({ video: { facingMode: 'user', width: { ideal: 4032 }, height: { ideal: 3024 }, aspectRatio: { ideal: 4 / 3 } }, audio: false })
-      .then(async (s) => {
-        stream = s
-        if (cancelled) return s.getTracks().forEach((t) => t.stop())
-        const video = videoRef.current
-        video.srcObject = s
-        await video.play()
+      { video: { facingMode: 'user', width: { ideal: 4032 }, height: { ideal: 3024 }, aspectRatio: { ideal: 4 / 3 } }, audio: false },
+      () => {
         setStatus(`Camera ready (${video.videoWidth}×${video.videoHeight})`)
         setRatio(video.videoWidth / video.videoHeight)
         setReady(true)
-      })
-      // NotAllowedError = permission denied; also fails on plain http:// other than localhost
-      .catch((e) => setStatus(`Camera unavailable: ${e.name}`))
-    return () => {
-      cancelled = true
-      stream?.getTracks().forEach((t) => t.stop())
-    }
+      },
+      (e) => setStatus(`Camera unavailable: ${e.name}`),
+    )
   }, [])
 
   // Free the previous photo's memory when it's replaced.
