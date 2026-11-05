@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     host: true, // listen on the LAN, not just localhost
     // python -m backend (from the repo root); same origin, so no CORS / mixed content
-    proxy: { '/scan': 'http://localhost:8000', '/books': 'http://localhost:8000', '/images': 'http://localhost:8000', '/stats': 'http://localhost:8000', '/tts': 'http://localhost:8000',
+    proxy: { '/scan': 'http://localhost:8000', '/books': 'http://localhost:8000', '/images': 'http://localhost:8000', '/stats': 'http://localhost:8000', '/tts': 'http://localhost:8000', '/question': 'http://localhost:8000', '/turn': 'http://localhost:8000',
       '/listen': { target: 'ws://localhost:8000', ws: true } },
   },
 })

@@ -15,7 +15,7 @@ def stats():
     since = datetime.now(timezone.utc) - timedelta(days=8)
     scans = []
     for doc in books.find({"updatedAt": {"$gte": since}}, {"scans": 1, "updatedAt": 1}):
-        scans += doc.get("scans") or [doc["updatedAt"]]  # books from before per-page times: their last update
+        scans += doc.get("scans") or [doc["updatedAt"]]
     sessions = list(reading.find({"start": {"$gte": since}}, {"_id": 0, "start": 1, "minutes": 1}))
 
     latest = None
@@ -26,8 +26,7 @@ def stats():
                 if line["Character"] != "Narrator"]
         latest = {"id": doc["_id"], "name": book["Name"], "lines": len(said),
                   "known": sum(c != "Unknown" for c in said)}
-    # Mongo hands back naive datetimes that are UTC; mark them so the app's local-time conversion is right
-    utc = lambda t: t.replace(tzinfo=timezone.utc).isoformat()  # noqa: E731
+    utc = lambda t: t.replace(tzinfo=timezone.utc).isoformat() 
     return {"scans": sorted(utc(t) for t in scans if t >= since.replace(tzinfo=None)),
             "reading": [{"start": utc(r["start"]), "minutes": r["minutes"]} for r in sessions],
             "latest": latest}

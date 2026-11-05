@@ -24,8 +24,6 @@ def speak(text):
                                   "voice_config": {"prebuilt_voice_config": {"voice_name": VOICE}}}},
     )
     pcm = reply.candidates[0].content.parts[0].inline_data.data
-    # gemini-3.8 TTS already returns a whole WAV (header + data + C2PA metadata chunk); wrapping it again
-    # made the header and metadata play as static. Older models (2.5) return raw 16-bit 24 kHz PCM.
     if pcm[:4] == b"RIFF":
         return pcm
     buf = io.BytesIO()

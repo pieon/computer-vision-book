@@ -16,13 +16,10 @@ function thisWeek() {
 // Round the y-axis top up to a readable number of minutes (at least 30).
 const niceMax = (v) => [30, 60, 90, 120, 180, 240, 360, 480].find((n) => n >= v) ?? Math.ceil(v / 60) * 60
 
-// Reading minutes per day as a 2px line with end-dots; the 7 x positions line up with the day dots above.
-// `minutes` runs Monday..today only, so days still to come aren't drawn as zero.
-// Hover/tap or arrow keys move a crosshair that shows the day's value.
+// A simple line chart showing the user's reading time over the past week.
 function ReadingChart({ minutes }) {
   const last = minutes.length - 1
   const [hover, setHover] = useState(null)
-  // draw at the real pixel width so text and the 2px line stay the same size on phone and tablet
   const box = useRef(null)
   const [W, setW] = useState(350)
   useEffect(() => {

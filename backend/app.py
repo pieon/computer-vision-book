@@ -6,10 +6,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import IMG_DIR
-from backend.routes import books, listen, scan, stats, tts
+from backend.routes import books, listen, question_acknowledgment, scan, stats, tts
 
 app = FastAPI()
-for feature in (scan, books, stats, listen, tts):
+for feature in (scan, books, stats, listen, tts, question_acknowledgment):
     app.include_router(feature.router)
 
 os.makedirs(IMG_DIR, exist_ok=True)

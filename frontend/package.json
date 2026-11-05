@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
+    "compromise": "^14.19.0",
+    "fastest-levenshtein": "^1.0.16",
     "nanoid": "^5.1.16",
+    "number-to-words": "^1.2.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

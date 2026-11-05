@@ -12,7 +12,7 @@ async def transcribe(chunks, on_text):
     Interim transcripts arrive while someone is still talking, then one final per phrase."""
     # key passed explicitly: the SDK's default reads the env at import time, maybe before .env was loaded
     client = AsyncDeepgramClient(api_key=os.environ["DEEPGRAM_API_KEY"])
-    async with client.listen.v1.connect(model="nova-3", interim_results="true", smart_format="true") as conn:
+    async with client.listen.v1.connect(model="nova-3", interim_results="true", smart_format="false", endpointing=50, utterance_end_ms=1000) as conn:
         async def read():
             async for msg in conn:
                 if isinstance(msg, ListenV1Results) and msg.channel.alternatives[0].transcript:

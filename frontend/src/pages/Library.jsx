@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { getJson, remove as removeUrl } from '../api.js'
 import { SearchIcon, SortIcon } from '../components/icons.jsx'
 import TabBar from '../components/TabBar.jsx'
+import { unlock } from '../narrator.js'
 import Book from './Book.jsx'
 
-// Raw Book2 JSON of one book from MongoDB (server.py GET /books/<id>).
 function BookJson({ id, onBack }) {
   const [json, setJson] = useState('')
 
@@ -40,15 +40,15 @@ function Cover({ book }) {
   return <img src={`/images/${book.id}/${book.cover}`} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
-// Kindle-style library of scanned books from MongoDB (server.py GET /books).
+// A simple library of scanned books from MongoDB.
 export default function Library({ onHome, onLibrary, onScan }) {
-  const [books, setBooks] = useState(null) // null = loading
+  const [books, setBooks] = useState(null) 
   const [error, setError] = useState('')
-  const [openId, setOpenId] = useState(null) // book whose JSON is shown
-  const [readId, setReadId] = useState(null) // book open in the reader
+  const [openId, setOpenId] = useState(null) 
+  const [readId, setReadId] = useState(null) 
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
-  const [menuFor, setMenuFor] = useState(null) // book whose options menu is open
+  const [menuFor, setMenuFor] = useState(null) 
 
   useEffect(() => {
     getJson('/books')
@@ -80,7 +80,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
 
   const q = query.trim().toLowerCase()
-  const shown = (books ?? []).filter((b) => b.name.toLowerCase().includes(q)) // server sends newest first
+  const shown = (books ?? []).filter((b) => b.name.toLowerCase().includes(q)) 
   if (!newestFirst) shown.reverse()
 
   return (
@@ -102,14 +102,12 @@ export default function Library({ onHome, onLibrary, onScan }) {
       {books?.length === 0 && <p className="library-note">No books yet. Tap Scan to add one.</p>}
       {books?.length > 0 && shown.length === 0 && <p className="library-note">No books match "{query}".</p>}
 
-      {/* Bootstrap grid: 3 covers per row on phones (like Kindle), 4 on tablets and up */}
       <div className="row g-3">
         {shown.map((b) => (
           <div className="col-4 col-md-3" key={b.id}>
             <div className="library-book">
-              {/* tap: read; right-click / long-press on desktop browsers: options */}
               <button type="button" className="library-cover" aria-label={`${b.name}, ${b.pages} pages`}
-                onClick={() => setReadId(b.id)} onContextMenu={(e) => { e.preventDefault(); setMenuFor(b) }}>
+                onClick={() => { unlock(); setReadId(b.id) }} /* unlock: Safari plays narration only after a tap */onContextMenu={(e) => { e.preventDefault(); setMenuFor(b) }}>
                 <Cover book={b} />
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
