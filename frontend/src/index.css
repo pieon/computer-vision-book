@@ -23,6 +23,8 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   box-shadow: 0 2px 10px #0009; }
 .library .library-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; display: block; }
 .library .library-tag { position: absolute; top: 0; right: 0; padding: 3px 7px; background: #111; color: #eee; font-size: 0.75rem; }
+.library .library-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: var(--lib-muted); font-size: 0.85rem; }
+.library .library-progress-failed { color: var(--lib-danger); }
 .library .library-more { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%;
   display: grid; place-items: center; background: #000c; color: #fff; font-size: 0.6rem; letter-spacing: 1px; }
 /* placeholder: white document with a blue band and the name on a dark strip, like Kindle's DOC tile */
@@ -93,6 +95,10 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .scan .scan-head h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2rem; }
 .scan .scan-count { margin: 0; color: var(--scan-muted); }
+.scan .scan-center { display: flex; align-items: center; gap: 14px; }
+.scan .scan-zoom { width: 44px; height: 44px;
+  border-radius: 50%; border: 1px solid #ffffff2e; background: #ffffff14; color: #eee; font-size: 0.85rem; font-weight: 700; }
+.scan .scan-zoom[aria-pressed="true"] { background: var(--scan-accent); border-color: transparent; color: #140f1f; }
 .scan .scan-count strong { color: #eee; }
 .scan .scan-status { margin: -6px 0 0; color: var(--scan-muted); font-size: 0.8rem; }
 .scan .scan-guide { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1; padding: 12px 16px; border-radius: 16px;
@@ -109,11 +115,6 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   border-radius: 999px; background: rgba(38, 38, 38, 0.9); border: 1px solid #ffffff14; box-shadow: 0 8px 30px #000a; }
 .scan .scan-cancel { justify-self: start; padding: 10px 16px; border-radius: 999px; color: var(--scan-danger); font-weight: 600; }
 .scan .scan-done { justify-self: end; padding: 10px 22px; border-radius: 999px; background: var(--scan-accent); color: #140f1f; font-weight: 700; }
-.scan .scan-shutter { width: 64px; height: 64px; border-radius: 50%; border: 4px solid #eee; display: grid; place-items: center; }
-.scan .scan-shutter::after { content: ""; width: 46px; height: 46px; border-radius: 50%; background: #eee; }
-.scan .scan-shutter:active::after { transform: scale(0.92); }
-.scan .scan-reading { color: var(--scan-muted); white-space: nowrap; }
-.scan .scan-retake { padding: 12px 24px; border-radius: 999px; background: var(--scan-danger); color: #1a0d0d; font-weight: 700; }
 .scan .scan-toast { position: fixed; left: 50%; bottom: 120px; z-index: 10; transform: translateX(-50%); padding: 10px 20px;
   border-radius: 999px; background: rgba(64, 64, 64, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }

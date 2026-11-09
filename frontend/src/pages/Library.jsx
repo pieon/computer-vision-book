@@ -3,6 +3,7 @@ import { getJson, remove as removeUrl } from '../api.js'
 import { SearchIcon, SortIcon } from '../components/icons.jsx'
 import TabBar from '../components/TabBar.jsx'
 import { unlock } from '../narrator.js'
+import { cancel as cancelUploads, progress, scanning, useScanQueue } from '../scanQueue.js'
 import Book from './Book.jsx'
 
 function BookJson({ id, onBack }) {
@@ -40,6 +41,18 @@ function Cover({ book }) {
   return <img src={`/images/${book.id}/${book.cover}`} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
+// "3 of 7 pages ready" under a book whose scanned pages are still processing; nothing once they're all done.
+function ScanProgress({ id }) {
+  const p = progress(id)
+  if (!p || p.done + p.failed === p.total) return null
+  return (
+    <p className="library-progress" role="status">
+      <span className="spinner-border spinner-border-sm" aria-hidden="true" /> {p.done} of {p.total} pages ready
+      {p.failed > 0 && <span className="library-progress-failed"> · {p.failed} failed</span>}
+    </p>
+  )
+}
+
 // A simple library of scanned books from MongoDB.
 export default function Library({ onHome, onLibrary, onScan }) {
   const [books, setBooks] = useState(null) 
@@ -49,12 +62,14 @@ export default function Library({ onHome, onLibrary, onScan }) {
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
   const [menuFor, setMenuFor] = useState(null) 
+  const queue = useScanQueue() // changes as scanned pages finish in the background (scanQueue.js)
 
+  // Reloaded whenever a background page finishes, so new pages and the cover show up.
   useEffect(() => {
     getJson('/books')
       .then(setBooks)
       .catch((e) => setError(e.message))
-  }, [])
+  }, [queue])
 
   // Escape closes the options menu.
   useEffect(() => {
@@ -68,6 +83,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   async function remove(book) {
     if (!window.confirm(`Delete "${book.name}" (${book.pages} pages)? This can't be undone.`)) return
     try {
+      await cancelUploads(book.id) // a book still processing: stop its queue first, or it would come back
       await removeUrl(`/books/${book.id}`)
       setBooks((list) => list.filter((b) => b.id !== book.id))
     } catch (e) {
@@ -79,8 +95,11 @@ export default function Library({ onHome, onLibrary, onScan }) {
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
   if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
 
+  // Books still being processed whose cover isn't saved yet aren't on the server: show a placeholder tile for them.
+  const listed = new Set((books ?? []).map((b) => b.id))
+  const pendingOnly = books ? scanning().filter((id) => !listed.has(id)).map((id) => ({ id, name: 'New book', pages: 0 })) : []
   const q = query.trim().toLowerCase()
-  const shown = (books ?? []).filter((b) => b.name.toLowerCase().includes(q)) 
+  const shown = [...pendingOnly, ...(books ?? [])].filter((b) => b.name.toLowerCase().includes(q)) 
   if (!newestFirst) shown.reverse()
 
   return (
@@ -111,6 +130,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
                 <Cover book={b} />
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
+              <ScanProgress id={b.id} />
               <button type="button" className="library-more" aria-label={`More options for ${b.name}`}
                 onClick={() => setMenuFor(b)}>•••</button>
             </div>

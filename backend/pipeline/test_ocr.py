@@ -5,7 +5,7 @@ from backend.clients.arc import chat
 from backend.config import ROOT
 from backend.pipeline.ocr import ocr
 
-IMG = os.path.join(ROOT, "output", "IMG_0003_unwarp.png")  # made by scripts/build_book.py (raw photos are mirrored)
+IMG = os.path.join(ROOT, "output", "IMG_0003_unwarp.jpeg")  # made by scripts/build_book.py (raw photos are mirrored)
 EXPECTED = "and then he ate my tie"
 
 

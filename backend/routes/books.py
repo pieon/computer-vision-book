@@ -15,7 +15,7 @@ def list_books():
     return list(books.aggregate([
         {"$sort": {"createdAt": -1}},
         {"$project": {"_id": 0, "id": "$_id", "name": {"$first": "$book.Book.Name"},
-                      "pages": {"$size": "$texts"}, "createdAt": 1,
+                      "pages": {"$size": {"$filter": {"input": "$texts", "cond": {"$ne": ["$$this", None]}}}},  # pages done so far, "createdAt": 1,
                       "cover": {"$first": "$book.Book.Pages.Cover.img"}}},
     ]))
 

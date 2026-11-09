@@ -38,6 +38,19 @@ def split_lines(text):
     return [(s.startswith('"'), " ".join(s.split())) for s in spans if s.strip()]
 
 
+# a sentence ends at . ! or ? (optionally followed by a closing quote/bracket) and a space; not after "..." mid-sentence
+# (the char before the stop isn't a dot) and not after a title like "Mr."
+# ponytail: short title list; add abbreviations here if lines get cut after them
+SENTENCE_END = re.compile(r"(?<=[^.\s][.!?])(?<!\bMr\.)(?<!\bMrs\.)(?<!\bMs\.)(?<!\bDr\.)(?<!\bSt\.)([\"')\]]?)\s+")
+
+
+def split_sentences(line):
+    """One line -> its sentences: 'Bram lived here. He was happy.' -> ['Bram lived here.', 'He was happy.']
+    Short lines make short narration clips, so each one's TTS starts sooner."""
+    parts = SENTENCE_END.split(line)  # [sentence, closer, sentence, closer, ...]
+    return [s + c for s, c in zip(parts[::2], parts[1::2] + [""]) if s.strip()]
+
+
 def tags(lines, i):
     """Narration sentences that could be the speech tag of quote i: the first sentence after it
     ("...," said Zoe.), then the last sentence before it if that ends in , or : (Zoe said, "...")."""
@@ -173,8 +186,11 @@ def build_page(img_name, text, names, prev_text=""):
         found = llm_speakers(lines, asked, names, prev_text)
         for i in unresolved:  # in order, so a chain of continued quotes copies an already-filled speaker
             speakers[i] = speakers[i - 2] if continues(lines, i) else found.get(i, "Unknown")
+    # speakers are worked out on whole quotes (the speech-tag rules need them); then each line is cut into sentences,
+    # every sentence keeping its line's speaker, so narration is spoken one sentence at a time
     return {"img": img_name, "question": "",
-            "text": [{"Reading": False, "Character": s, "Dialogue": line} for s, (_, line) in zip(speakers, lines)]}
+            "text": [{"Reading": False, "Character": s, "Dialogue": sentence}
+                     for s, (_, line) in zip(speakers, lines) for sentence in split_sentences(line)]}
 
 
 def build_book(img_dir, name, names=None):
@@ -214,6 +230,17 @@ if __name__ == "__main__":
     assert normalize("It ended. . . . Then") == "It ended. ... Then"
     assert normalize("“Wait . . .”") == '"Wait ..."'
     assert number_word(1) == "One" and number_word(15) == "Fifteen" and number_word(42) == "FortyTwo"
+    # one line per sentence; not after "..." mid-sentence or a title
+    assert split_sentences("Bram lived here. He was happy! Was he? Yes.") == ["Bram lived here.", "He was happy!", "Was he?", "Yes."]
+    assert split_sentences("I wonder ... maybe not.") == ["I wonder ... maybe not."]
+    assert split_sentences("Mr. Brown and Dr. Lee came. They sat.") == ["Mr. Brown and Dr. Lee came.", "They sat."]
+    assert split_sentences('"Mine goes up. Yours goes down."') == ['"Mine goes up.', 'Yours goes down."']
+    assert split_sentences("said Clara.") == ["said Clara."]
+    assert build_page("p.png", '"Mine goes up. Yours goes down," said Clara. She smiled.', ["Clara"])["text"] == [
+        {"Reading": False, "Character": "Clara", "Dialogue": '"Mine goes up.'},
+        {"Reading": False, "Character": "Clara", "Dialogue": 'Yours goes down,"'},
+        {"Reading": False, "Character": "Narrator", "Dialogue": "said Clara."},
+        {"Reading": False, "Character": "Narrator", "Dialogue": "She smiled."}]
     n = ["Clara", "Zoe"]
     assert split_lines("“You count, and I’ll hide,” said Clara.") == [(True, '"You count, and I\'ll hide,"'), (False, "said Clara.")]
     assert assign_speakers(split_lines("“Welcome to my house!” Clara beamed."), n) == ["Clara", "Narrator"]
