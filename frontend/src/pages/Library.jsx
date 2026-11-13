@@ -5,6 +5,9 @@ import TabBar from '../components/TabBar.jsx'
 import { unlock } from '../narrator.js'
 import { cancel as cancelUploads, progress, scanning, useScanQueue } from '../scanQueue.js'
 import Book from './Book.jsx'
+import BookEditor from './BookEditor.jsx'
+import PageList from './PageList.jsx'
+import Scanner from './Scanner.jsx'
 
 function BookJson({ id, onBack }) {
   const [json, setJson] = useState('')
@@ -58,7 +61,10 @@ export default function Library({ onHome, onLibrary, onScan }) {
   const [books, setBooks] = useState(null) 
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) 
-  const [readId, setReadId] = useState(null) 
+  const [readId, setReadId] = useState(null)
+  const [pagesOf, setPagesOf] = useState(null) // book id open in Edit Book (its Pages list)
+  const [editing, setEditing] = useState(null) // page index open in the line editor, from the Pages list
+  const [adding, setAdding] = useState(null) // { id, start }: scanning more pages onto that book, from Pages
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
   const [menuFor, setMenuFor] = useState(null) 
@@ -69,7 +75,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
     getJson('/books')
       .then(setBooks)
       .catch((e) => setError(e.message))
-  }, [queue])
+  }, [queue, editing, pagesOf]) // and after Edit Book / Pages close, so fixed speakers and page counts show
 
   // Escape closes the options menu.
   useEffect(() => {
@@ -94,6 +100,13 @@ export default function Library({ onHome, onLibrary, onScan }) {
   // the library stays mounted underneath, so Back doesn't reload the list
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
   if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
+  if (adding) { // back to Pages either way; added pages keep processing there
+    return <Scanner bookId={adding.id} start={adding.start} onDone={() => setAdding(null)} onCancel={() => setAdding(null)} />
+  }
+  if (editing !== null) return <BookEditor id={pagesOf} index={editing} onBack={() => setEditing(null)} /* back to Pages */ />
+  if (pagesOf) {
+    return <PageList id={pagesOf} onBack={() => setPagesOf(null)} onOpen={setEditing} onAdd={(start) => setAdding({ id: pagesOf, start })} />
+  }
 
   // Books still being processed whose cover isn't saved yet aren't on the server: show a placeholder tile for them.
   const listed = new Set((books ?? []).map((b) => b.id))
@@ -131,8 +144,10 @@ export default function Library({ onHome, onLibrary, onScan }) {
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
               <ScanProgress id={b.id} />
-              <button type="button" className="library-more" aria-label={`More options for ${b.name}`}
-                onClick={() => setMenuFor(b)}>•••</button>
+              {/* "!" instead of ••• when a line's speaker couldn't be worked out */}
+              <button type="button" className={`library-more${b.unknown?.length ? ' library-more-warn' : ''}`}
+                aria-label={`More options for ${b.name}${b.unknown?.length ? ', needs speaker fixes' : ''}`}
+                onClick={() => setMenuFor(b)}>{b.unknown?.length ? '!' : '•••'}</button>
             </div>
           </div>
         ))}
@@ -144,6 +159,11 @@ export default function Library({ onHome, onLibrary, onScan }) {
             <div className="library-menu-title">{menuFor.name}</div>
             <button type="button" role="menuitem" autoFocus onClick={() => { setOpenId(menuFor.id); setMenuFor(null) }}>
               Book Details
+            </button>
+            <button type="button" role="menuitem" className={menuFor.unknown?.length ? 'library-warn-item' : undefined}
+              onClick={() => { setPagesOf(menuFor.id); setMenuFor(null) }}>
+              Edit Book
+              {menuFor.unknown?.length > 0 && ` (Failed to assign the character at page${menuFor.unknown.length > 1 ? 's' : ''} ${menuFor.unknown.join(', ')})`}
             </button>
             <button type="button" role="menuitem" className="library-danger"
               onClick={() => { const b = menuFor; setMenuFor(null); remove(b) }}>

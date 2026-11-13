@@ -10,7 +10,8 @@ const STEPS = [ // what to do next, by how many photos are taken
   'Turn to the next page, or tap Done to finish.',
 ]
 
-export default function Scanner({ bookId, onDone, onCancel }) {
+// start: the first page position to fill. 0 = a new book (cover first); > 0 = adding pages to the end of a book.
+export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const videoRef = useRef(null)
   const needTurn = useRef(false) // a page was taken: wait for the next turn before the next photo
   const [status, setStatus] = useState('Starting camera...')
@@ -40,7 +41,7 @@ export default function Scanner({ bookId, onDone, onCancel }) {
 
   // A photo is sent right away in the background (scanQueue.js, several at once), so the camera is free for the next
   // page and processing carries on after Done.
-  const count = useRef(0) // photos so far, for labels (state updates lag behind)
+  const count = useRef(start) // next page position, for labels (state updates lag behind)
   function add(photo, t) {
     URL.revokeObjectURL(photo.url)
     const i = count.current++
@@ -59,8 +60,14 @@ export default function Scanner({ bookId, onDone, onCancel }) {
   }
 
   // Cancel scanning: drop this book from the DB (JSON and page images) and leave.
+  // Adding to an existing book: just stop; photos not uploaded yet are dropped, pages already saved stay.
   async function cancel() {
     const n = taken.length
+    if (start) {
+      if (n && !window.confirm('Stop adding pages? Photos not uploaded yet are dropped; pages already saved stay in the book.')) return
+      await cancelUploads(bookId)
+      return onCancel()
+    }
     if (n && !window.confirm(`Discard this book and its ${n} scanned page${n === 1 ? '' : 's'}?`)) return
     try {
       await cancelUploads(bookId) // pages still waiting aren't sent; the one uploading finishes first
@@ -106,7 +113,7 @@ export default function Scanner({ bookId, onDone, onCancel }) {
   return (
     <main className="scan" style={{ '--ratio': ratio }}>
       <header className="scan-head">
-        <h1>Scanning</h1>
+        <h1>{start ? 'Adding pages' : 'Scanning'}</h1>
         <p className="scan-count">
           <strong>{done}</strong> saved{processing ? ` · ${processing} processing` : ''}{failed ? ` · ${failed} failed` : ''}
         </p>
@@ -118,7 +125,7 @@ export default function Scanner({ bookId, onDone, onCancel }) {
           <video ref={videoRef} autoPlay playsInline muted style={{ transform: `scale(-${zoom}, ${zoom})` }} /* mirrored and zoomed, same as snap() */ />
           {taken.length > 0 && <div className="scan-flash" key={`flash${taken.length}`} />}
           <section className="scan-guide" aria-live="polite" key={taken.length} /* re-keyed so each message fades in */>
-            <p className="scan-guide-text">{last ? `✓ ${last} taken. ` : ''}{STEPS[Math.min(taken.length, STEPS.length - 1)]}</p>
+            <p className="scan-guide-text">{last ? `✓ ${last} taken. ` : ''}{start && !taken.length ? 'Open to the page you want to add.' : STEPS[Math.min(start + taken.length, STEPS.length - 1)]}</p>
           </section>
         </div>
       </div>
@@ -130,7 +137,7 @@ export default function Scanner({ bookId, onDone, onCancel }) {
             onClick={() => setZoom(ZOOMS[(ZOOMS.indexOf(zoom) + 1) % ZOOMS.length])}>x{zoom}</button>
         </div>
         {/* pages still processing carry on in the background; the Library shows how many are ready */}
-        <button type="button" className="scan-done" disabled={taken.length < 2} onClick={onDone}>Done</button>
+        <button type="button" className="scan-done" disabled={taken.length < (start ? 1 : 2)} onClick={onDone}>Done</button>
       </div>
 
       {toast && <div className="scan-toast" role="status">{toast}</div>}

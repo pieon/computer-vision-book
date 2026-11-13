@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getJson, request, timing } from '../api.js'
 import { snap, startCamera, watchMotion } from '../camera.js'
+import { NextIcon, NextPageIcon, PauseIcon, PlayIcon, PrevIcon, PrevPageIcon } from '../components/icons.jsx'
 import { narrator } from '../narrator.js'
 import { isRead, variants, words } from '../reading.js'
 
@@ -55,11 +56,15 @@ export default function Book({ id, onBack }) {
   const pageId = useRef(0) // bumped per page, so a question that arrives after the page turned is dropped
   const asked = useRef([]) // questions already asked on this page, so Bedrock doesn't repeat one
   const [question, setQuestion] = useState(null) // latest follow-up question on this page; a newer one replaces it
+  const [showText, setShowText] = useState(false) // the page's lines are hidden unless switched on
+  const [paused, setPaused] = useState(false) // paused: no narration, no line matching or questions, no page-turn watch
+  const pausedRef = useRef(false) // for onText, which the mic socket holds from the first render
+  useEffect(() => { pausedRef.current = paused }, [paused])
   const reading = useRef(`${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}_${id}`)
 
   // Track the reading progress.
   function onText(text, final) {
-    if (!final) return
+    if (!final || pausedRef.current) return
     if (!tracking.current && pageDone.current) { // page finished: nothing left to read, so anything said is talk
       const said = words(text)
       console.log('[track] page done | talk:', text)
@@ -128,19 +133,32 @@ export default function Book({ id, onBack }) {
   const lastLine = !page || line >= page.text.length - 1 // also true on a page with no text
   const atEnd = pages && index === pages.length - 1 && lastLine
 
-  // Next: the page's next line, or the first line of the next page. Called by the button, by speech and by narration.
-  function next() {
-    if (atEnd) return
-    if (!lastLine) return setLine(line + 1)
-    setIndex(index + 1)
-    setLine(0)
-  }
-  // A line was read or narrated, go to the next line
+  // A line was read or narrated: go to the next line, or on the page's last line wait for the real page to turn
   function lineDone() {
     if (lastLine) pageDone.current = { line: current?.Dialogue ?? '', pageText: page.text.map((l) => l.Dialogue).join('\n'), img: page.img }
     if (atEnd) return setFinished(true)
     if (lastLine) return setTurnWait(true)
-    next()
+    setLine(line + 1)
+  }
+  // Back a line; stepping back from a finished last line undoes "page done"
+  function prev() {
+    setLine(line - 1)
+    setTurnWait(false)
+    setFinished(false)
+    pageDone.current = null
+  }
+  // ▶: count the current line as read, as speech or narration would (last line → page done / book finished)
+  function skipLine() {
+    tracking.current = null // later speech on this page is talk (questions), not this line, same as onText after a match
+    narrator.onended = narrator.onerror = null // a Narrator line cut short mustn't call lineDone() again when it ends
+    narrator.pause()
+    lineDone()
+  }
+  // Jump to another page's first line; the [index] effect below clears that page's done/turn/question state
+  function goPage(i) {
+    setIndex(i)
+    setLine(0)
+    setFinished(false)
   }
   useEffect(() => { lineDoneRef.current = lineDone })
 
@@ -174,7 +192,7 @@ export default function Book({ id, onBack }) {
   // Waiting for a page turn, same motion score as the Scanner
   useEffect(() => {
     const video = videoRef.current
-    if (!turnWait || !video?.videoWidth) return // no camera: the Next button still works
+    if (paused || !turnWait || !video?.videoWidth) return
     let moving = false
     let movedAt = null // first frame over 12, for the stage times below
     let stillSince = null
@@ -211,7 +229,7 @@ export default function Book({ id, onBack }) {
       }
     })
     return () => { stopped = true; stop(); setChecking(false) }
-  }, [turnWait, index, id])
+  }, [paused, turnWait, index, id])
 
   // The follow-up question is read aloud when tapped
   const questionAudio = useRef(null)
@@ -234,24 +252,39 @@ export default function Book({ id, onBack }) {
     }
   }, [index, pages])
 
+  function playNarrator() {
+    narrator.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] play failed:', e) })
+  }
   // A Narrator line is read aloud when it becomes current, then moves on to next line.
   useEffect(() => {
     if (current?.Character !== 'Narrator') return
     narrator.src = `/tts?text=${encodeURIComponent(current.Dialogue)}`
     narrator.onended = narrator.onerror = () => lineDoneRef.current()
-    narrator.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] play failed:', e) })
+    if (!pausedRef.current) playNarrator()
     return () => {
       narrator.onended = narrator.onerror = null // the next line reuses the element: don't let this one move it on
       narrator.pause()
     }
   }, [current])
 
-  useEffect(() => { lineRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [current])
+  // Pause/Play holds the Narrator line where it is (cached or fresh clip alike: /tts sends a whole WAV)
+  useEffect(() => {
+    if (current?.Character !== 'Narrator') return
+    if (paused) narrator.pause()
+    else if (!narrator.ended) playNarrator() // an already-finished last line isn't replayed
+  }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps -- only on toggle; line changes are handled above
+
+  useEffect(() => { lineRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [current, showText])
 
   return (
     <div className="reader">
       <div className="d-flex align-items-center mb-3">
         <h1 className="h3 me-auto mb-0">Page {index + 1}</h1>
+        <div className="form-check form-switch me-3 mb-0">
+          <input className="form-check-input" type="checkbox" role="switch" id="show-text"
+            checked={showText} onChange={(e) => setShowText(e.target.checked)} />
+          <label className="form-check-label" htmlFor="show-text">Show text</label>
+        </div>
         <button type="button" className="btn btn-outline-light" onClick={onBack}>Back</button>
       </div>
 
@@ -259,13 +292,13 @@ export default function Book({ id, onBack }) {
       {!error && !pages && <p>Loading...</p>}
       {page && (
         <div className="reader-text">
-          {page.text.length ? page.text.map((l, i) => (
+          {showText && (page.text.length ? page.text.map((l, i) => (
             <div key={i} ref={i === line ? lineRef : null}
               className={`reader-line${l.Character === 'Narrator' ? ' reader-narrator' : ''}${i === line && !turnWait && !finished ? ' reader-current' : ''}`} /* no highlight once the page's last line is done */>
               <span className="reader-speaker">{l.Character}</span>
               <p>{l.Dialogue}</p>
             </div>
-          )) : <p className="text-secondary">(No text on this page)</p>}
+          )) : <p className="text-secondary">(No text on this page)</p>)}
           {question && (
             <button type="button" className="reader-line reader-current reader-question" onClick={playQuestion}
               aria-label={`Play question: ${question}`}>
@@ -280,8 +313,15 @@ export default function Book({ id, onBack }) {
           {checking ? 'Checking the page...' : `Turn the page · motion ${motion.toFixed(1)}%`}
         </p>
       )}
-      {pages && !atEnd && (
-        <button type="button" className="btn btn-primary" onClick={next}>Next</button>
+      {pages && (
+        <div className="reader-controls">
+          <button type="button" aria-label="Previous page" disabled={index === 0} onClick={() => goPage(index - 1)}>{PrevPageIcon}</button>
+          <button type="button" aria-label="Previous line" disabled={line === 0} onClick={prev}>{PrevIcon}</button>
+          <button type="button" className="reader-play" aria-label={paused ? 'Play' : 'Pause'}
+            onClick={() => setPaused(!paused)}>{paused ? PlayIcon : PauseIcon}</button>
+          <button type="button" aria-label="Next line" disabled={turnWait || finished} onClick={skipLine}>{NextIcon}</button>
+          <button type="button" aria-label="Next page" disabled={index === pages.length - 1} onClick={() => goPage(index + 1)}>{NextPageIcon}</button>
+        </div>
       )}
       {finished && <button type="button" className="btn btn-primary" onClick={onBack}>Back to Library</button>}
 

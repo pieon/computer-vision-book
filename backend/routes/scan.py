@@ -42,6 +42,20 @@ def timed(times, step):
 unwarp_lock = threading.Lock()
 
 
+def image_name(book_id, n):
+    """File name for page n's image: page_<n+1>.png by position, so a retry of the same page overwrites it. After
+    pages were deleted or reordered (Pages list, books.py) that name may belong to another page; then the first free
+    page_<n+1>_<k>.png. Deterministic for the same book state, so a retry still lands on the same file."""
+    doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
+    pages = doc["book"][0]["Book"]["Pages"] if doc else {}
+    own = pages.get(page_key(n), {}).get("img")
+    taken = {p["img"] for p in pages.values()} - {own}
+    name, k = f"page_{n + 1:03d}.png", 1
+    while name in taken:
+        name, k = f"page_{n + 1:03d}_{k}.png", k + 1
+    return name
+
+
 def add_page(book_id, n, photo, times):
     """Unwarp + OCR one photo and save it as page `n` of the book (0 = cover). Several pages can be in here at once:
     unwarp takes turns (unwarp_lock) and OCR, the slow part, runs in parallel; only the DB update takes the book lock.
@@ -49,7 +63,7 @@ def add_page(book_id, n, photo, times):
     where the time went."""
     img_dir = os.path.join(IMG_DIR, book_id)
     os.makedirs(img_dir, exist_ok=True)
-    img = f"page_{n + 1:03d}.png"  # by position, so a retry of the same page overwrites it
+    img = image_name(book_id, n)
     with timed(times, "unwarp"), unwarp_lock, tempfile.NamedTemporaryFile(suffix=".jpg") as f:
         f.write(photo)
         f.flush()
@@ -79,7 +93,7 @@ def commit_page(book_id, n, img, text, times):
             key = page_key(n)
             pages[key] = build_page(img, text, names, (n and texts[n - 1]) or "")
             pages = {page_key(i): pages[page_key(i)] for i in range(len(texts)) if page_key(i) in pages}
-            book = book_json(f"Book {book_id}", pages, names)
+            book = book_json(doc["book"][0]["Book"]["Name"] if doc else f"Book {book_id}", pages, names)
         now = datetime.now(timezone.utc)
         with timed(times, "db_write"):
             books.update_one({"_id": book_id},

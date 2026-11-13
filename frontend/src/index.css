@@ -27,6 +27,8 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .library .library-progress-failed { color: var(--lib-danger); }
 .library .library-more { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%;
   display: grid; place-items: center; background: #000c; color: #fff; font-size: 0.6rem; letter-spacing: 1px; }
+.library .library-more.library-more-warn { background: #ff9f0a; color: #000; font-size: 1.1rem; font-weight: 800; letter-spacing: 0; }
+.library .library-menu .library-warn-item { color: #ff9f0a; }
 /* placeholder: white document with a blue band and the name on a dark strip, like Kindle's DOC tile */
 .library .cover-doc { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: #fff; }
 .library .cover-doc-tag { margin-top: 14%; width: 70%; padding: 4% 8%; background: #4466b8; color: #fff; font-weight: 700; font-size: clamp(0.8rem, 3vw, 1.6rem); }
@@ -137,3 +139,27 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   border-radius: 12px; background: #000; box-shadow: 0 4px 16px #000a; display: grid; place-items: center; font-size: 0.75rem; }
 .reader .reader-cam video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .reader .reader-cam span { position: relative; padding: 8px; text-align: center; }
+/* player-style controls: previous line, pause/play, next line */
+.reader .reader-controls { display: flex; justify-content: center; align-items: center; gap: 24px; margin: 8px 0 24px; }
+.reader .reader-controls button { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+  border: 0; background: #26324a; color: #fff; }
+.reader .reader-controls .reader-play { width: 64px; height: 64px; background: #5b9bff; }
+.reader .reader-controls button:disabled { opacity: 0.35; }
+
+/* Edit Book (BookEditor.jsx): page photo, then one row per line: speaker, text, move/delete */
+.editor .editor-photo { display: block; max-width: 100%; max-height: 40vh; margin: 0 auto 16px; border-radius: 8px; }
+.editor .editor-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #ffffff1f; }
+.editor .editor-line .form-select { flex: 0 1 180px; }
+.editor .editor-line .form-control { flex: 1 1 260px; }
+.editor .editor-tools { display: flex; gap: 4px; }
+.editor .editor-tools .btn { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square */
+.editor .editor-tools svg { width: 18px; height: 18px; } /* trash icon at the arrows' size */
+.editor .editor-tools .btn-outline-danger { margin-left: 15px; } /* apart from the arrows, so it's not tapped by mistake */
+.editor .pages-row { align-items: center; flex-wrap: nowrap; }
+.editor .pages-open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0;
+  background: none; color: inherit; text-align: left; }
+.editor .pages-unknown { display: block; width: fit-content; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
+  background: #ff9f0a; color: #000; font-size: 0.8rem; font-weight: 600; } /* same orange as the Library "!" */
+.editor .pages-unknown-note { color: #ff9f0a; }
+.editor .pages-thumb { width: 64px; height: 84px; object-fit: cover; border-radius: 6px; background: #1c1c1c; flex: none; }
+.editor .editor-line .form-select.editor-unknown { background-color: #ff9f0a; color: #000; font-weight: 600; } /* speaker still to fix */
