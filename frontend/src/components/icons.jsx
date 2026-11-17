@@ -17,3 +17,5 @@ export const NextIcon = icon(<><path d="M5 4l10 8-10 8z" /><path d="M19 5v14" />
 // arched arrows (a page flipping over): left end for the previous page, right end for the next
 export const PrevPageIcon = icon(<><path d="M20 16a8 8 0 0 0-16 0" /><path d="M1 13l3 3 3-3" /></>)
 export const NextPageIcon = icon(<><path d="M4 16a8 8 0 0 1 16 0" /><path d="M17 13l3 3 3-3" /></>)
+export const MicIcon = icon(<><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" /></>)
+export const FlagIcon = icon(<path d="M5 21V4h11l-2 4 2 4H5" />) // outlined; CSS fills it when flagged

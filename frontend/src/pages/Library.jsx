@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { getJson, remove as removeUrl } from '../api.js'
-import { SearchIcon, SortIcon } from '../components/icons.jsx'
+import { FlagIcon, SearchIcon, SortIcon } from '../components/icons.jsx'
 import TabBar from '../components/TabBar.jsx'
-import { unlock } from '../narrator.js'
 import { cancel as cancelUploads, progress, scanning, useScanQueue } from '../scanQueue.js'
 import Book from './Book.jsx'
 import BookEditor from './BookEditor.jsx'
+import Cast from './Cast.jsx'
 import PageList from './PageList.jsx'
 import Scanner from './Scanner.jsx'
 
@@ -50,7 +50,7 @@ function ScanProgress({ id }) {
   if (!p || p.done + p.failed === p.total) return null
   return (
     <p className="library-progress" role="status">
-      <span className="spinner-border spinner-border-sm" aria-hidden="true" /> {p.done} of {p.total} pages ready
+      {p.done} of {p.total} pages ready
       {p.failed > 0 && <span className="library-progress-failed"> · {p.failed} failed</span>}
     </p>
   )
@@ -62,6 +62,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) 
   const [readId, setReadId] = useState(null)
+  const [cast, setCast] = useState(null) // who reads each character, picked in Cast before reading readId
   const [pagesOf, setPagesOf] = useState(null) // book id open in Edit Book (its Pages list)
   const [editing, setEditing] = useState(null) // page index open in the line editor, from the Pages list
   const [adding, setAdding] = useState(null) // { id, start }: scanning more pages onto that book, from Pages
@@ -75,7 +76,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
     getJson('/books')
       .then(setBooks)
       .catch((e) => setError(e.message))
-  }, [queue, editing, pagesOf]) // and after Edit Book / Pages close, so fixed speakers and page counts show
+  }, [queue, editing, pagesOf, readId]) // and after Edit Book / Pages / the reader close: fixes, page counts, flags
 
   // Escape closes the options menu.
   useEffect(() => {
@@ -99,7 +100,8 @@ export default function Library({ onHome, onLibrary, onScan }) {
 
   // the library stays mounted underneath, so Back doesn't reload the list
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
-  if (readId) return <Book id={readId} onBack={() => setReadId(null)} />
+  if (readId && !cast) return <Cast id={readId} onStart={setCast} onBack={() => setReadId(null)} />
+  if (readId) return <Book id={readId} cast={cast} onBack={() => { setReadId(null); setCast(null) }} />
   if (adding) { // back to Pages either way; added pages keep processing there
     return <Scanner bookId={adding.id} start={adding.start} onDone={() => setAdding(null)} onCancel={() => setAdding(null)} />
   }
@@ -111,6 +113,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   // Books still being processed whose cover isn't saved yet aren't on the server: show a placeholder tile for them.
   const listed = new Set((books ?? []).map((b) => b.id))
   const pendingOnly = books ? scanning().filter((id) => !listed.has(id)).map((id) => ({ id, name: 'New book', pages: 0 })) : []
+  const processing = new Set(scanning())
   const q = query.trim().toLowerCase()
   const shown = [...pendingOnly, ...(books ?? [])].filter((b) => b.name.toLowerCase().includes(q)) 
   if (!newestFirst) shown.reverse()
@@ -135,22 +138,30 @@ export default function Library({ onHome, onLibrary, onScan }) {
       {books?.length > 0 && shown.length === 0 && <p className="library-note">No books match "{query}".</p>}
 
       <div className="row g-3">
-        {shown.map((b) => (
+        {shown.map((b) => {
+          const busy = processing.has(b.id) // pages still uploading/processing: no reading or options menu until they're done
+          const warn = !busy && b.unknown?.length
+          return (
           <div className="col-4 col-md-3" key={b.id}>
             <div className="library-book">
-              <button type="button" className="library-cover" aria-label={`${b.name}, ${b.pages} pages`}
-                onClick={() => { unlock(); setReadId(b.id) }} /* unlock: Safari plays narration only after a tap */onContextMenu={(e) => { e.preventDefault(); setMenuFor(b) }}>
+              <button type="button" className="library-cover" disabled={busy}
+                aria-label={busy ? `${b.name}, still processing` : `${b.name}, ${b.pages} pages`}
+                onClick={() => setReadId(b.id)} onContextMenu={(e) => { e.preventDefault(); if (!busy) setMenuFor(b) }}>
                 <Cover book={b} />
+                {busy && <span className="library-busy"><span className="spinner-border" aria-hidden="true" /></span>}
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
               <ScanProgress id={b.id} />
-              {/* "!" instead of ••• when a line's speaker couldn't be worked out */}
-              <button type="button" className={`library-more${b.unknown?.length ? ' library-more-warn' : ''}`}
-                aria-label={`More options for ${b.name}${b.unknown?.length ? ', needs speaker fixes' : ''}`}
-                onClick={() => setMenuFor(b)}>{b.unknown?.length ? '!' : '•••'}</button>
+              {/* hidden while pages process; "!" instead of ••• when a line's speaker couldn't be worked out */}
+              {!busy && (
+                <button type="button" className={`library-more${warn ? ' library-more-warn' : ''}`}
+                  aria-label={`More options for ${b.name}${warn ? ', needs speaker fixes' : ''}`}
+                  onClick={() => setMenuFor(b)}>{warn ? '!' : '•••'}</button>
+              )}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {menuFor && (
@@ -162,8 +173,14 @@ export default function Library({ onHome, onLibrary, onScan }) {
             </button>
             <button type="button" role="menuitem" className={menuFor.unknown?.length ? 'library-warn-item' : undefined}
               onClick={() => { setPagesOf(menuFor.id); setMenuFor(null) }}>
-              Edit Book
-              {menuFor.unknown?.length > 0 && ` (Failed to assign the character at page${menuFor.unknown.length > 1 ? 's' : ''} ${menuFor.unknown.join(', ')})`}
+              <span>
+                Edit Book
+                {menuFor.unknown?.length > 0 && ` (Failed to assign the character at page${menuFor.unknown.length > 1 ? 's' : ''} ${menuFor.unknown.join(', ')})`}
+              </span>
+              {menuFor.flagged?.length > 0 && (
+                <span className="library-flag" role="img"
+                  aria-label={`flagged page${menuFor.flagged.length > 1 ? 's' : ''} ${menuFor.flagged.join(', ')}`}>{FlagIcon}</span>
+              )}
             </button>
             <button type="button" role="menuitem" className="library-danger"
               onClick={() => { const b = menuFor; setMenuFor(null); remove(b) }}>

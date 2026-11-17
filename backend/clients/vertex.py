@@ -14,14 +14,14 @@ VOICE = "Aoede"
 client = genai.Client(vertexai=True, project=os.environ["VERTEX_PROJECT_ID"], location=os.environ["VERTEX_LOCATION"])
 
 
-def speak(text):
-    """WAV bytes of `text` read aloud in the narrator voice."""
+def speak(text, voice=VOICE):
+    """WAV bytes of `text` read aloud in a Gemini prebuilt voice (default: the narrator's)."""
     reply = client.models.generate_content(
         model=MODEL,
         contents=text,
         config={"response_modalities": ["AUDIO"],
                 "speech_config": {"language_code": "en-US",
-                                  "voice_config": {"prebuilt_voice_config": {"voice_name": VOICE}}}},
+                                  "voice_config": {"prebuilt_voice_config": {"voice_name": voice}}}},
     )
     pcm = reply.candidates[0].content.parts[0].inline_data.data
     if pcm[:4] == b"RIFF":

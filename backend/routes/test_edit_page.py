@@ -2,11 +2,19 @@
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+import backend.clients.arc as arc
 from backend.db import books
-from backend.routes.books import PageEdit, PageOrder, delete_page, edit_page, list_books, reorder_pages
+from backend.routes.books import Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books, reorder_pages
 from backend.routes.scan import commit_page, image_name
 
 BOOK = "zz-test-edit"  # throwaway id, deleted at the end
+
+
+def offline(prompt):
+    raise RuntimeError("offline")
+
+
+arc.chat = offline  # speakers from the rules alone (book_builder falls back to them), no network
 
 try:
     books.delete_one({"_id": BOOK})
@@ -36,6 +44,18 @@ try:
         raise AssertionError("expected a validation error")
     except ValidationError:
         pass
+    # flags: shown per page in the Library row, kept through line edits, cleared by unflagging
+    assert row()["flagged"] == []
+    flag_page(Flag(flagged=True), BOOK, "PageOne")
+    assert row()["flagged"] == [2], row()
+    edit_page(PageEdit(text=[{"Character": "Zoe", "Dialogue": '"Who is there?"'}]), BOOK, "PageOne")
+    assert row()["flagged"] == [2]
+    try:
+        flag_page(Flag(flagged=True), BOOK, "PageNine")
+        raise AssertionError("expected 404")
+    except HTTPException as e:
+        assert e.status_code == 404
+
     # delete page: later pages move up a key, texts stays one per page, the only page can't go
     commit_page(BOOK, 2, "page_003.png", "The end.", {})
     book = delete_page(BOOK, "PageOne")
@@ -51,6 +71,12 @@ try:
     doc = books.find_one({"_id": BOOK})
     assert [p["img"] for p in doc["book"][0]["Book"]["Pages"].values()] == ["page_003.png", "page_001.png"]
     assert doc["texts"] == ["The end.", "The Big Day"], doc["texts"]
+    flag_page(Flag(flagged=True), BOOK, "Cover")  # the flag follows its page when it moves
+    reorder_pages(PageOrder(order=["PageOne", "Cover"]), BOOK)
+    assert row()["flagged"] == [2], row()
+    flag_page(Flag(flagged=False), BOOK, "PageOne")
+    assert row()["flagged"] == []
+    reorder_pages(PageOrder(order=["PageOne", "Cover"]), BOOK)  # back to the order the checks below expect
     for bad in (["Cover"], ["Cover", "Cover"], ["Cover", "PageNine"]):
         try:
             reorder_pages(PageOrder(order=bad), BOOK)

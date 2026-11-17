@@ -23,6 +23,10 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   box-shadow: 0 2px 10px #0009; }
 .library .library-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; display: block; }
 .library .library-tag { position: absolute; top: 0; right: 0; padding: 3px 7px; background: #111; color: #eee; font-size: 0.75rem; }
+/* still processing: can't be opened; the cover dims, a spinner sits on its center */
+.library .library-cover:disabled { cursor: progress; position: relative; }
+.library .library-cover:disabled > :not(.library-busy) { opacity: 0.5; }
+.library .library-busy { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
 .library .library-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: var(--lib-muted); font-size: 0.85rem; }
 .library .library-progress-failed { color: var(--lib-danger); }
 .library .library-more { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%;
@@ -122,7 +126,8 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }
 
 /* Book reader: page text, camera as a small mirrored window in the bottom-right corner */
-.reader { max-width: 900px; margin: 0 auto; }
+.reader { max-width: 900px; margin: 0 auto; min-height: calc(100dvh - 32px); display: flex; flex-direction: column; } /* 32px: body padding */
+.reader .reader-stage { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
 .reader .reader-text { font-family: Georgia, "Times New Roman", serif; font-size: 1.4rem; line-height: 1.6; margin-bottom: 24px; }
 /* one card per line, speaker on top; characters get an accent bar, the narrator stays plain */
 .reader .reader-line { padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; background: #1c1c1c; border-left: 4px solid #5b9bff; opacity: 0.55; transition: opacity 0.2s, background 0.2s; }
@@ -140,7 +145,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader .reader-cam video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .reader .reader-cam span { position: relative; padding: 8px; text-align: center; }
 /* player-style controls: previous line, pause/play, next line */
-.reader .reader-controls { display: flex; justify-content: center; align-items: center; gap: 24px; margin: 8px 0 24px; }
+.reader .reader-controls { display: flex; justify-content: center; align-items: center; gap: 24px; margin: 16px 0 calc(min(200px, 35vw) * 0.75 + 16px); } /* clears the camera (.reader-cam) */
 .reader .reader-controls button { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
   border: 0; background: #26324a; color: #fff; }
 .reader .reader-controls .reader-play { width: 64px; height: 64px; background: #5b9bff; }
@@ -163,3 +168,40 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor .pages-unknown-note { color: #ff9f0a; }
 .editor .pages-thumb { width: 64px; height: 84px; object-fit: cover; border-radius: 6px; background: #1c1c1c; flex: none; }
 .editor .editor-line .form-select.editor-unknown { background-color: #ff9f0a; color: #000; font-weight: 600; } /* speaker still to fix */
+
+/* Reader header: To Library | Page N | Show text + flag */
+.reader .reader-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 16px; }
+.reader .reader-head > .btn { justify-self: start; }
+.reader .reader-head-end { justify-self: end; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+/* flag: red outline, filled red once flagged */
+.reader-flag, .pages-flag { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; flex: none;
+  border: 2px solid #ff453a; background: none; color: #ff453a; }
+.reader-flag svg { width: 20px; height: 20px; }
+.reader-flag.on { background: #ff453a33; }
+.reader-flag.on svg, .pages-flag svg, .library-flag svg { fill: currentColor; }
+/* Library menu: Edit Book's flag on the right */
+.library .library-menu button { display: flex; align-items: center; gap: 12px; }
+.library .library-flag { margin-left: auto; color: #ff453a; display: grid; flex: none; }
+/* Edit Book list: tap the filled flag to clear it */
+.editor .pages-flag { width: 34px; height: 34px; background: #ff453a33; }
+.editor .pages-flag svg { width: 18px; height: 18px; }
+.editor .pages-flag-note { color: #ff453a; }
+
+/* Cast (who reads?): one row per character, its voice picker and a preview button */
+.cast .cast-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ffffff1f; }
+.cast .cast-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1px solid #ffffff40; }
+.cast .cast-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cast .form-select { width: auto; max-width: 55%; }
+.cast .cast-play { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: none; color: inherit; display: grid; place-items: center; padding: 0; }
+.cast .cast-play svg { width: 18px; height: 18px; }
+
+/* how far the voiced line's clip has played (Book.jsx); not shown on the reader's own lines */
+.reader .reader-cue { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; min-height: 120px; justify-content: center; }
+.reader .reader-cue-note { margin: 0; color: #5b9bff; font-weight: 600; font-size: 1.4rem; }
+/* the reader's own line: a mic instead of the bar */
+.reader .reader-mic { width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; background: #5b9bff; color: #fff; }
+.reader .reader-tts { display: block; width: min(100%, 520px); height: 14px; appearance: none; border: none; border-radius: 7px; background: #ffffff26; overflow: hidden; }
+.reader .reader-mic svg { width: 56px; height: 56px; }
+.reader .reader-tts::-webkit-progress-bar { background: #ffffff26; }
+.reader .reader-tts::-webkit-progress-value { background: #5b9bff; }
+.reader .reader-tts::-moz-progress-bar { background: #5b9bff; }

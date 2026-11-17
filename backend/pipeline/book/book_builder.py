@@ -11,6 +11,11 @@ from backend.pipeline.book.clean_ocr import QUOTES
 # "...", ". . .", "…" (and a 4th dot for sentence-ending ellipses), with any surrounding spaces
 ELLIPSIS = re.compile(r"\s*(?:…|\.(?:\s?\.){2,3})\s*")
 
+# a "..." span, or a '...' span: opens at a ' after start/space/([ that is followed by a letter (not "Zoe's"),
+# and closes at the first ' NOT followed by a letter (so "I'm"/"don't" inside it don't close it); unclosed -> runs to the end
+# ponytail: a plural possessive inside single quotes ('the dogs' bones') closes it early; "rock 'n' roll" reads as a quote
+QUOTE = re.compile(r"""\"[^\"]*(?:\"|$)|(?<![^\s(\[])'(?=\w)(?:[^']|'(?=\w))*(?:'(?!\w)|$)""")
+
 ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
         "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
 TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
@@ -32,10 +37,15 @@ def number_word(n):
 
 
 def split_lines(text):
-    """Split page text into [(is_quote, line)]: each "..." span is dialogue, text between is narration.
+    """Split page text into [(is_quote, line)]: each "..." or '...' span (QUOTE) is dialogue, text between is narration.
     An unclosed quote (OCR cut off the page) runs to the end."""
-    spans = re.findall(r'"[^"]*(?:"|$)|[^"]+', normalize(text))
-    return [(s.startswith('"'), " ".join(s.split())) for s in spans if s.strip()]
+    text = normalize(text)
+    spans, at = [], 0
+    for m in QUOTE.finditer(text):
+        spans += [(False, text[at:m.start()]), (True, m.group())]
+        at = m.end()
+    spans.append((False, text[at:]))
+    return [(q, " ".join(s.split())) for q, s in spans if s.strip()]
 
 
 # a sentence ends at . ! or ? (optionally followed by a closing quote/bracket) and a space; not after "..." mid-sentence
@@ -147,50 +157,71 @@ def assign_speakers(lines, names):
     return speakers
 
 
-OTHER = "Someone else"  # decision-model option for a speaker who isn't a known character
+def rule_speakers(lines, names):
+    """The rules' answer for every line (assign_speakers), with a continued quote copying its first part and
+    "Unknown" where nothing fits. The fallback when the LLM can't answer."""
+    speakers = assign_speakers(lines, names)
+    for i, s in enumerate(speakers):  # in order, so a chain of continued quotes copies an already-filled speaker
+        if s is None:
+            speakers[i] = speakers[i - 2] if continues(lines, i) else "Unknown"
+    return speakers
 
 
-def llm_speakers(lines, unresolved, names, prev_text=""):
-    """Ask ARC's decision model who says each unresolved quote: one multiple-choice question per line over the
-    known characters, all in one ~0.3 s request. The previous page goes along as context, so a "he said" on a
-    page that never names him can still be placed. Returns {index: name}; lines it can't place are left out
-    (-> "Unknown"), and so is everything if there are no names to choose from or the call fails."""
-    if not names:
+def llm_speakers(lines, names, text, prev_text=""):
+    """Ask DeepSeek (ARC chat) who says each quote on the page, in one request. It sees the page as printed (its
+    line breaks show the paragraphs, so back-to-back replies can be told apart) and the previous page as context.
+    Returns {index: name} for the quotes it could place; None if the call or its reply failed."""
+    quotes = [i for i, (q, _) in enumerate(lines) if q]
+    if not quotes:
         return {}
-    from backend.clients.arc import decide  # imported here so the rule-based parts work without .env/network
+    from backend.clients.arc import chat  # imported here so the rule-based parts work without .env/network
 
     numbered = "\n".join(f"{i}: {line}" for i, (_, line) in enumerate(lines))
-    if prev_text.strip():  # plain text, unnumbered, so the line numbers in the questions only mean this page
-        numbered = f"Previous page:\n{normalize(prev_text)}\n\nThis page, numbered lines:\n{numbered}"
-    options = {n: None for n in names} | {OTHER: "a character not in this list, or unclear"}
-    questions = {str(i): {"type": "choice", "instructions": f"This is one page of a children's book. Who speaks line {i}?",
-                          "criteria": options} for i in unresolved}
+    prompt = f"""You label who speaks each quote on one page of a children's picture book.
+Known characters: {", ".join(names) or "(none found yet)"}
+
+Previous page (context only):
+{normalize(prev_text) or "(none)"}
+
+This page as printed (line breaks are the book's paragraphs):
+{normalize(text)}
+
+This page as numbered lines:
+{numbered}
+
+Who speaks each quoted line ({", ".join(map(str, quotes))})?
+- Use a known character's name exactly as listed when it's them; work out "he"/"she" from the story.
+- A new paragraph of speech usually means a different speaker; untagged back-to-back replies usually alternate between the people talking.
+- If someone not in the list speaks and the text names or describes them, give a short name ("Manager", "Mother").
+- If you can't tell, use "Unknown".
+Reply with only a JSON object from quoted line number to speaker, e.g. {{"0": "Zoe", "2": "Clara"}}."""
     try:
-        answers = decide(numbered, questions)
+        reply = chat(prompt)
+        found = json.loads(reply[reply.index("{"):reply.rindex("}") + 1])  # tolerates ```json fences or a preamble
     except Exception as e:  # speakers are a nice-to-have; never fail the page over them
-        print(f"  decision model failed: {e}")
-        return {}
-    return {int(k): a["choice"] for k, a in answers.items() if a.get("choice") in names}
+        print(f"  speaker LLM failed: {e}")
+        return None
+    known = {n.lower(): n for n in names}
+    return {int(k): known.get(v.strip().lower(), v.strip()) for k, v in found.items()
+            if str(k).isdigit() and int(k) in quotes and isinstance(v, str) and 0 < len(v.strip()) <= 40
+            and v.strip().lower() != "unknown"}
 
 
 def build_page(img_name, text, names, prev_text=""):
     if not text.strip() or text.lower().startswith("there is no text"):
         return {"img": img_name, "question": "", "text": []}
     lines = split_lines(text)
-    speakers = assign_speakers(lines, names)
-    unresolved = [i for i, s in enumerate(speakers) if s is None]
-    if unresolved:
-        # a continued quote isn't asked separately; it gets its first part's answer, so the two can't disagree
-        asked = [i for i in unresolved if not continues(lines, i)]
-        print(f"  LLM fallback for {img_name}: lines {asked}")
-        found = llm_speakers(lines, asked, names, prev_text)
-        for i in unresolved:  # in order, so a chain of continued quotes copies an already-filled speaker
-            speakers[i] = speakers[i - 2] if continues(lines, i) else found.get(i, "Unknown")
-    # speakers are worked out on whole quotes (the speech-tag rules need them); then each line is cut into sentences,
-    # every sentence keeping its line's speaker, so narration is spoken one sentence at a time
+    found = llm_speakers(lines, names, text, prev_text) or {}
+    speakers = ["Narrator" if not q else found.get(i) for i, (q, _) in enumerate(lines)]
+    if None in speakers:  # LLM failed, or left some quotes out / said Unknown: the rules fill those in
+        print(f"  rule fallback for {img_name}: lines {[i for i, s in enumerate(speakers) if s is None]}")
+        rules = rule_speakers(lines, names)
+        speakers = [s or r for s, r in zip(speakers, rules)]
+    # a quote stays one line, however many sentences it has; narration is cut into sentences (each keeps the
+    # Narrator), so it's spoken one sentence at a time
     return {"img": img_name, "question": "",
             "text": [{"Reading": False, "Character": s, "Dialogue": sentence}
-                     for s, (_, line) in zip(speakers, lines) for sentence in split_sentences(line)]}
+                     for s, (q, line) in zip(speakers, lines) for sentence in ([line] if q else split_sentences(line))]}
 
 
 def build_book(img_dir, name, names=None):
@@ -219,12 +250,18 @@ def book_json(name, pages, names):
     """Wrap built pages in the Book2 structure; Characters = Narrator + names that actually speak."""
     used = [s["Character"] for p in pages.values() for s in p["text"]]
     characters = ["Narrator"] + [n for n in dict.fromkeys(names + used) if n in used and n != "Narrator"]
-    return [{"Book": {"id": 1, "Name": name,
+    return [{"Book": {"Name": name,
                       "Characters": [{"Name": n, "img": ""} for n in characters],
                       "Pages": pages}}]
 
 
 if __name__ == "__main__":
+    import backend.clients.arc as arc
+
+    def offline(prompt):
+        raise RuntimeError("offline")
+
+    arc.chat = offline  # the checks below run the rules alone, no network
     assert normalize("“Don’t,” she said.") == '"Don\'t," she said.'
     assert normalize("I wonder . . . maybe") == normalize("I wonder…maybe") == "I wonder ... maybe"
     assert normalize("It ended. . . . Then") == "It ended. ... Then"
@@ -237,10 +274,17 @@ if __name__ == "__main__":
     assert split_sentences('"Mine goes up. Yours goes down."') == ['"Mine goes up.', 'Yours goes down."']
     assert split_sentences("said Clara.") == ["said Clara."]
     assert build_page("p.png", '"Mine goes up. Yours goes down," said Clara. She smiled.', ["Clara"])["text"] == [
-        {"Reading": False, "Character": "Clara", "Dialogue": '"Mine goes up.'},
-        {"Reading": False, "Character": "Clara", "Dialogue": 'Yours goes down,"'},
+        {"Reading": False, "Character": "Clara", "Dialogue": '"Mine goes up. Yours goes down,"'},
         {"Reading": False, "Character": "Narrator", "Dialogue": "said Clara."},
         {"Reading": False, "Character": "Narrator", "Dialogue": "She smiled."}]
+    # single quotes are dialogue too; apostrophes aren't quotes
+    assert split_lines("'Maybe I was too stern,' she fretted. Miss Rosemary wasn't worried.") == \
+        [(True, "'Maybe I was too stern,'"), (False, "she fretted. Miss Rosemary wasn't worried.")]
+    assert split_lines("'I'm cool. See you after school.") == [(True, "'I'm cool. See you after school.")]
+    assert split_lines("Zoe's dog wasn't there.") == [(False, "Zoe's dog wasn't there.")]
+    assert split_lines('"He said \'hi\' to me," said Zoe.') == [(True, '"He said \'hi\' to me,"'), (False, "said Zoe.")]
+    assert assign_speakers(split_lines("'Hi,' said Zoe."), ["Zoe"]) == ["Zoe", "Narrator"]
+    assert find_names(["'Hi,' said Zoe."]) == ["Zoe"]
     n = ["Clara", "Zoe"]
     assert split_lines("“You count, and I’ll hide,” said Clara.") == [(True, '"You count, and I\'ll hide,"'), (False, "said Clara.")]
     assert assign_speakers(split_lines("“Welcome to my house!” Clara beamed."), n) == ["Clara", "Narrator"]
@@ -261,6 +305,18 @@ if __name__ == "__main__":
     assert assign_speakers(split_lines('"Oh!" Lisa said. "Look!" "Hi," said Zoe.'), ["Lisa", "Zoe"]) == \
         ["Lisa", "Narrator", "Lisa", "Zoe", "Narrator"]
     assert assign_speakers(split_lines('"Oh!" she said. "Look!" "Hi," said Zoe.'), ["Zoe"])[2] is None
+    # DeepSeek decides the quotes; names are matched to the known spelling; what it leaves out or calls Unknown,
+    # or everything if the call fails, comes from the rules
+    page = '"Want to play?" asked Clara.\n"Sure!"\n"Hi," said Zoe.'
+    arc.chat = lambda prompt: '```json\n{"0": "clara", "2": "Zoe", "3": "Unknown"}\n```'
+    assert [l["Character"] for l in build_page("p.png", page, n)["text"]] == ["Clara", "Narrator", "Zoe", "Zoe", "Narrator"]
+    arc.chat = lambda prompt: '{"0": "Clara", "2": "Manager"}'
+    assert [l["Character"] for l in build_page("p.png", page, n)["text"]][2] == "Manager"  # a speaker not in the list
+    arc.chat = offline  # the rules alone give Clara's back-to-back reply to Clara too: why DeepSeek decides first
+    assert [l["Character"] for l in build_page("p.png", page, n)["text"]] == ["Clara", "Narrator", "Clara", "Zoe", "Narrator"]
+    arc.chat = lambda prompt: "no idea"
+    assert [l["Character"] for l in build_page("p.png", '"Who?" She looked.', n)["text"]] == ["Unknown", "Narrator"]
+    arc.chat = offline
 
     p = argparse.ArgumentParser()
     p.add_argument("img_dir", help="Folder of page images, in reading order by file name.")

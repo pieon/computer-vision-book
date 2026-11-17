@@ -23,6 +23,10 @@ class PageEdit(BaseModel):
     text: list[Line] = Field(max_length=200)
 
 
+class Flag(BaseModel):
+    flagged: bool
+
+
 class PageOrder(BaseModel):
     order: list[str] = Field(max_length=1000)  # every page key once, in the new order
 
@@ -38,10 +42,14 @@ def list_books():
                       "cover": {"$first": "$book.Book.Pages.Cover.img"},
                       # each page's speakers, in page order
                       "speakers": {"$map": {"input": {"$objectToArray": {"$first": "$book.Book.Pages"}},
-                                            "in": "$$this.v.text.Character"}}}},
+                                            "in": "$$this.v.text.Character"}},
+                      # each page's reader flag (Book.jsx), in page order
+                      "flags": {"$map": {"input": {"$objectToArray": {"$first": "$book.Book.Pages"}},
+                                         "in": "$$this.v.flagged"}}}},
     ]))
     for r in rows:
         r["unknown"] = [i + 1 for i, s in enumerate(r.pop("speakers", None) or []) if "Unknown" in s]
+        r["flagged"] = [i + 1 for i, f in enumerate(r.pop("flags", None) or []) if f]
     return rows
 
 
@@ -67,6 +75,19 @@ def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = P
         book = book_json(doc["book"][0]["Book"]["Name"], pages, [])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "updatedAt": datetime.now(timezone.utc)}})
     return book
+
+
+@router.put("/books/{book_id}/pages/{key}/flag")
+def flag_page(flag: Flag, book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"^(Cover|Page[A-Za-z]+)$")):
+    """The reader's flag button (Book.jsx), or unflagging in Edit Book: mark a page as needing a fix. Stored on the
+    page itself, so it moves with the page on reorder and stays through line edits. The key pattern has no . or $,
+    so it's safe in the dotted path."""
+    path = f"book.0.Book.Pages.{key}"
+    with lock:
+        r = books.update_one({"_id": book_id, path: {"$exists": True}}, {"$set": {f"{path}.flagged": flag.flagged}})
+    if not r.matched_count:
+        raise HTTPException(404, "no such page")
+    return {"flagged": flag.flagged}
 
 
 @router.put("/books/{book_id}/order")

@@ -25,3 +25,6 @@ export function timing(client, server, requestMs) {
     `| request ${ms(requestMs)} = server ${ms(serverMs)} [${Object.entries(server).map(([k, v]) => `${k} ${ms(v * 1000)}`).join(' ')}]`,
     `+ network ${ms(requestMs - serverMs)} | total ${ms(clientMs + requestMs)}`].join(' ')
 }
+
+// Read-aloud clip of `text` in a Gemini voice (backend/routes/tts.py; cached there, so the same URL is the same clip)
+export const ttsUrl = (text, voice) => `/tts?${new URLSearchParams({ text, voice })}`

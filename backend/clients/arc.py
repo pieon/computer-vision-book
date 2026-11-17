@@ -1,4 +1,4 @@
-"""VT ARC's LLM API: chat (multimodal LLM) and decide (fast decision model). Needs LLM_API_KEY in .env."""
+"""VT ARC's LLM API: chat (multimodal LLM; OCR and speaker labels). Needs LLM_API_KEY in .env."""
 import json
 import os
 import urllib.error
@@ -33,8 +33,3 @@ def chat(content):
     })
     return reply["choices"][0]["message"]["content"] or ""  # content can be null
 
-
-def decide(state, questions):
-    """Ask ARC's decision model questions about `state` (text). Fast (~0.3 s), returns {question_id: answer},
-    e.g. a "choice" question gives {"choice": "Zoe", "probabilities": {...}, "confidence": 0.98}."""
-    return _post("systemone", {"model": "decision.vllm-sr/d3-mini", "state": state, "questions": questions})["answers"]

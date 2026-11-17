@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getJson, request } from '../api.js'
-import { TrashIcon } from '../components/icons.jsx'
+import { FlagIcon, TrashIcon } from '../components/icons.jsx'
 import { scanning, useScanQueue } from '../scanQueue.js'
 
 // Edit Book: every page of a book as a row (scan thumbnail + page number); tap one to edit its lines (BookEditor.jsx),
@@ -41,6 +41,17 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
     [order[i], order[to]] = [order[to], order[i]]
     apply(`/books/${id}/order`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order }) }, 'move the page')
   }
+  async function unflag(i) {
+    const [key, page] = pages[i]
+    try {
+      await request(`/books/${id}/pages/${key}/flag`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flagged: false }),
+      })
+      setBook((b) => ({ ...b, Pages: { ...b.Pages, [key]: { ...page, flagged: false } } }))
+    } catch (e) {
+      window.alert(`Couldn't clear the flag: ${e.message}`)
+    }
+  }
   function del(i) {
     if (!window.confirm(`Delete page ${i + 1} and its photo? This can't be undone.`)) return
     apply(`/books/${id}/pages/${pages[i][0]}`, { method: 'DELETE' }, 'delete the page')
@@ -54,6 +65,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
       </div>
       {uploading && <p className="text-secondary" role="status">New pages are still uploading; moving and deleting unlock when they're done.</p>}
 
+      {pages.some(([, p]) => p.flagged) && <p className="pages-flag-note">Flagged pages were marked while reading. Tap the flag to clear it once fixed.</p>}
       {unknown > 0 && <p className="pages-unknown-note">Pages marked "Unknown" have a line whose speaker needs fixing. Tap one to fix it.</p>}
       {pages.map(([key, page], i) => {
         const unknownLines = page.text.filter((l) => l.Character === 'Unknown').length
@@ -67,6 +79,10 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
               {unknownLines > 0 && <span className="pages-unknown">Unknown ×{unknownLines}</span>}
             </span>
           </button>
+          {page.flagged && (
+            <button type="button" className="pages-flag" onClick={() => unflag(i)} disabled={busy}
+              aria-label={`Page ${i + 1} is flagged; clear the flag`} title="Clear the flag">{FlagIcon}</button>
+          )}
           <div className="editor-tools">
             <button type="button" className="btn btn-sm btn-outline-light" aria-label={`Move page ${i + 1} up`}
               disabled={i === 0 || locked} onClick={() => move(i, i - 1)}>↑</button>

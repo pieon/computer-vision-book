@@ -88,12 +88,14 @@ def commit_page(book_id, n, img, text, times):
         pages = doc["book"][0]["Book"]["Pages"] if doc else {}
 
         with timed(times, "speakers"):  # usually instant; slow when it falls back to the LLM
-            # ponytail: earlier pages keep the speakers they got when added; rebuild all pages if late-found names matter
+            # ponytail: earlier pages keep the speakers they got when added; rebuild all pages if late-found names matter]
             names = find_names([t for t in texts if t])  # all pages' text so far, so names come from the whole book
             key = page_key(n)
             pages[key] = build_page(img, text, names, (n and texts[n - 1]) or "")
             pages = {page_key(i): pages[page_key(i)] for i in range(len(texts)) if page_key(i) in pages}
-            book = book_json(doc["book"][0]["Book"]["Name"] if doc else f"Book {book_id}", pages, names)
+            cover = (texts[0] or "").strip().split("\n")[0][:80]
+            name = cover if n == 0 and cover else (doc["book"][0]["Book"]["Name"] if doc else f"Book {book_id}")
+            book = book_json(name, pages, names)
         now = datetime.now(timezone.utc)
         with timed(times, "db_write"):
             books.update_one({"_id": book_id},
