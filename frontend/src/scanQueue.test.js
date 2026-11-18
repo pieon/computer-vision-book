@@ -5,13 +5,21 @@ import { cancel, enqueue, MAX_IN_FLIGHT, progress, scanning } from './scanQueue.
 function fakeFetch(ms, fail = () => false) {
   const calls = []
   const stats = { inFlight: 0, peak: 0 }
-  globalThis.fetch = vi.fn(async (url) => {
-    const n = Number(new URL(url, 'http://x').searchParams.get('n'))
+  globalThis.fetch = vi.fn(async (url, { signal } = {}) => {
+    const q = new URL(url, 'http://x').searchParams
+    const n = Number(q.get('n'))
     const attempt = calls.filter((c) => c === n).length + 1
     calls.push(n)
+    stats.urls = [...(stats.urls ?? []), `${q.get('book')}/${n}`]
     stats.peak = Math.max(stats.peak, ++stats.inFlight)
-    await new Promise((r) => setTimeout(r, ms))
-    stats.inFlight--
+    try {
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, ms)
+        signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      })
+    } finally {
+      stats.inFlight--
+    }
     if (fail(n, attempt)) return { ok: false, status: 500 }
     return { ok: true, status: 200, json: async () => ({ page: `page ${n}`, times: {} }) }
   })
@@ -32,11 +40,27 @@ test('sends right away, several at once, each with its own page number', async (
   expect(scanning()).not.toContain('bookA')
 })
 
-test('cancel drops photos not sent yet and waits for the ones in flight', async () => {
-  const { calls, stats } = fakeFetch(20)
-  for (let n = 0; n < 6; n++) enqueue('bookB', n, `photo${n}`)
-  await cancel('bookB')
-  expect(calls).toEqual([0, 1, 2, 3]) // 4 and 5 never sent
-  expect(stats.inFlight).toBe(0) // nothing still uploading when cancel returns
+test('cancel returns at once: photos not sent yet are dropped, the ones in flight aborted and not retried', async () => {
+  const { calls, stats } = fakeFetch(1000)
+  const results = []
+  for (let n = 0; n < 6; n++) enqueue('bookB', n, `photo${n}`, (reply) => results.push(reply))
+  cancel('bookB')
   expect(progress('bookB')).toBeUndefined()
+  await vi.waitFor(() => expect(stats.inFlight).toBe(0), { timeout: 200 }) // aborted, not waited for
+  await new Promise((r) => setTimeout(r, 20))
+  expect(calls).toEqual([0, 1, 2, 3]) // 4 and 5 never sent, nothing retried
+  expect(results).toEqual([]) // no callbacks for a cancelled book
+})
+
+test('one limit across books, and a new book\'s cover goes first', async () => {
+  const { stats } = fakeFetch(20)
+  for (let n = 1; n < 8; n++) enqueue('bookC', n, `photo${n}`)
+  enqueue('bookD', 0, 'cover')
+  enqueue('bookD', 1, 'photo1')
+  expect(stats.urls.slice(-4)).toEqual(['bookC/1', 'bookC/2', 'bookC/3', 'bookC/4'])
+  await vi.waitFor(() => expect(scanning()).toEqual([]), { timeout: 2000 })
+  const sent = stats.urls.slice(-9)
+  expect(sent[4]).toBe('bookD/0') // the first free slot goes to the cover, ahead of bookC's waiting pages
+  expect(sent.at(-1)).toBe('bookD/1') // other pages keep their place in line
+  expect(stats.peak).toBe(MAX_IN_FLIGHT) // never more than the limit across both books
 })

@@ -1,60 +1,241 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getJson, ttsUrl } from '../api.js'
-import { PlayIcon } from '../components/icons.jsx'
+import Cropper from '../components/Cropper.jsx'
+import { PersonSilhouette, PlayIcon } from '../components/icons.jsx'
 import { narrator, unlock } from '../narrator.js'
 
-// CA's mates (CA/src/Book/Roles.js): a Gemini prebuilt voice each, and a color for its dot
+// CA's mates (CA/src/Book/Roles.js): a Gemini prebuilt voice each, and a color and body for its orb: shape is a
+// border-radius, w its width relative to its height
 const VOICES = [
-  { name: 'Orange Opal', voice: 'Aoede', color: '#ff9f43' },
-  { name: 'Green Grant', voice: 'Umbriel', color: '#2ecc71' },
-  { name: 'Yellow Yancey', voice: 'Puck', color: '#f1c40f' },
-  { name: 'Violet Victor', voice: 'Enceladus', color: '#9b59b6' },
-  { name: 'Blue Beatrice', voice: 'Zephyr', color: '#3498db' },
-  { name: 'Ruby Randy', voice: 'Iapetus', color: '#e74c3c' },
-  { name: 'Coral Carly', voice: 'Kore', color: '#ff7f6e' },
+  { name: 'Orange Opal', voice: 'Aoede', color: '#ff9f43', shape: '28%' }, // rounded square
+  { name: 'Green Grant', voice: 'Umbriel', color: '#2ecc71', shape: '64% 36% 58% 42% / 48% 62% 38% 52%' }, // blob
+  { name: 'Yellow Yancey', voice: 'Puck', color: '#f1c40f', shape: '999px', w: 1.35 }, // wide pill
+  { name: 'Violet Victor', voice: 'Enceladus', color: '#9b59b6', shape: '50% 50% 50% 6%' }, // drop
+  { name: 'Blue Beatrice', voice: 'Zephyr', color: '#3498db', shape: '50% 50% 10% 10% / 64% 64% 10% 10%' }, // dome
+  { name: 'Ruby Randy', voice: 'Iapetus', color: '#e74c3c', shape: '6% 64%' }, // leaf
+  { name: 'Coral Carly', voice: 'Kore', color: '#ff7f6e', shape: '50%', w: 0.78 }, // tall egg
 ]
+const READER = { name: 'Reader (me)', voice: 'reader', color: '#f5f5f5', shape: '50%' } // never leaves the ring; boxes get a copy
+// orb body: color, size, shape, and a different blink moment per voice so they don't all blink together
+const orbStyle = (orb, size) => `--c:${orb.color};--s:${size}px;--r:${orb.shape};--w:${orb.w ?? 1};--d:${(VOICES.indexOf(orb) + 1) * 0.7}s`
+const orbOf = (key) => (key === READER.voice ? READER : VOICES.find((v) => v.voice === key))
+const DEFAULTS = { Narrator: 'Aoede' }
+// Every character starts with a voice: the Narrator gets theirs, the rest take the unused voices in order.
+// More characters than voices: the extra ones start empty (read by the reader).
+function autoCast(names) {
+  const free = VOICES.map((v) => v.voice).filter((v) => !names.some((n) => DEFAULTS[n] === v))
+  return Object.fromEntries(names.map((n) => [n, DEFAULTS[n] ?? free.shift() ?? '']))
+}
+const STEP = 84 // px between ring slots; also px of swipe per slot
 
-// Before each reading: who reads each character. A voice = the app speaks that character's lines;
-// '' = the reader reads them (tracked by the mic). Not saved; Start hands the choice to the reader page.
+function Orb({ orb, size = 56, label = true }) {
+  return (
+    <span className="cast-orb-wrap">
+      <span className={`cast-orb${orb === READER ? ' cast-orb-reader' : ''}`} style={Object.fromEntries(orbStyle(orb, size).split(';').map((d) => d.split(':')))} />
+      {label && <span className="cast-orb-name">{orb.name}</span>}
+    </span>
+  )
+}
+
+// A copy of an orb glides from one element's spot to another's (Web Animations), then is removed.
+function fly(fromRect, toRect, orb) {
+  if (!fromRect || !toRect || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
+  const size = 56
+  const el = document.createElement('span')
+  el.className = `cast-orb cast-orb-flying${orb === READER ? ' cast-orb-reader' : ''}`
+  el.style.cssText = `${orbStyle(orb, size)};left:0;top:0`
+  document.body.append(el)
+  const at = (r) => `translate(${r.left + r.width / 2 - size / 2}px, ${r.top + r.height / 2 - size / 2}px)`
+  return el.animate([{ transform: at(fromRect) }, { transform: at(toRect) }],
+    { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished.finally(() => el.remove())
+}
+
+// Before each reading: who reads each character. Tap a voice orb in the ring, then a character's box (or the row
+// first, then the orb): the orb flies into the box. A voice is used once and leaves the ring; Reader (me) stays and
+// boxes get a copy. An empty box = the reader too. Start hands { character: voice | '' } to the reader page
+// ('' = the reader reads it, tracked by the mic). Not saved.
 export default function Cast({ id, onStart, onBack }) {
-  const [cast, setCast] = useState(null) // { character: voice | '' }
+  const [boxes, setBoxes] = useState(null) // { character: voice | 'reader' | '' }
+  const [firstImg, setFirstImg] = useState({}) // { character: img of the first page they speak on }
+  const [faces, setFaces] = useState({}) // { character: cropped picture file } (Characters[].img)
+  const [pageImgs, setPageImgs] = useState([]) // every page's img, in order, for the cropper
+  const [cropping, setCropping] = useState(null) // character whose picture is being cropped
   const [error, setError] = useState('')
+  const [picked, setPicked] = useState(null) // { orb: voice key } | { row: character } | null
+  const [hidden, setHidden] = useState(new Set()) // 'box:<name>' / 'ring:<key>' while a copy flies there
+  const [rot, setRot] = useState(0) // ring position, in slots (the item at index rot is in the center)
+  const [dragging, setDragging] = useState(false)
+  const boxRefs = useRef({})
+  const orbRefs = useRef({})
+  const ringRef = useRef(null)
+  const moved = useRef(false) // the last pointer down was a swipe, not a tap
 
   useEffect(() => {
     getJson(`/books/${id}`)
-      .then((book) => setCast(Object.fromEntries(book[0].Book.Characters.map((c) => [c.Name, ['Narrator', 'Onomatopoeia'].includes(c.Name) ? 'Aoede' : '']))))
+      .then((book) => {
+        const { Characters, Pages } = book[0].Book
+        const first = {}
+        for (const p of Object.values(Pages)) for (const l of p.text) first[l.Character] ??= p.img
+        setFirstImg(first)
+        setPageImgs(Object.values(Pages).map((p) => p.img))
+        setFaces(Object.fromEntries(Characters.filter((c) => c.img).map((c) => [c.Name, c.img])))
+        setBoxes(autoCast(Characters.map((c) => c.Name).filter((n) => n !== 'Onomatopoeia'))) // no row: see start()
+      })
       .catch((e) => setError(e.message))
   }, [id])
 
-  function preview(name) {
+  const placed = new Set(Object.values(boxes ?? {}))
+  const ring = [READER, ...VOICES.filter((v) => !placed.has(v.voice))]
+  const n = ring.length
+  useEffect(() => { setRot((r) => ((Math.round(r) % n) + n) % n) }, [n]) // an orb left or came back
+
+  const hide = (key, on) => setHidden((h) => { const c = new Set(h); if (on) c.add(key); else c.delete(key); return c })
+  const rectOf = (el) => el?.getBoundingClientRect()
+
+  function preview(voice, name) {
     narrator.onended = narrator.onerror = null
-    narrator.src = ttsUrl(`Hi, I'm ${name}.`, cast[name])
+    narrator.src = ttsUrl(`Hi, I'm ${name}.`, voice)
     narrator.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] preview failed:', e) })
   }
 
+  // Put orb `key` into `name`'s box; a voice already there flies back to the ring (swap).
+  function place(name, key) {
+    const old = boxes[name]
+    setPicked(null)
+    if (old === key) return
+    const from = rectOf(orbRefs.current[key])
+    const to = rectOf(boxRefs.current[name])
+    const ringCenter = rectOf(ringRef.current?.querySelector('.cast-ring-center'))
+    setBoxes((b) => ({ ...b, [name]: key }))
+    hide(`box:${name}`, true)
+    fly(from, to, orbOf(key)).then(() => hide(`box:${name}`, false))
+    if (old && old !== READER.voice) {
+      hide(`ring:${old}`, true)
+      fly(to, ringCenter, orbOf(old)).then(() => hide(`ring:${old}`, false))
+    }
+  }
+
+  // Empty a box; its voice flies back to the ring.
+  function sendBack(name) {
+    const old = boxes[name]
+    const from = rectOf(boxRefs.current[name])
+    const ringCenter = rectOf(ringRef.current?.querySelector('.cast-ring-center'))
+    setBoxes((b) => ({ ...b, [name]: '' }))
+    if (old === READER.voice) return
+    hide(`ring:${old}`, true)
+    fly(from, ringCenter, orbOf(old)).then(() => hide(`ring:${old}`, false))
+  }
+
+  function tapBox(name) {
+    if (picked?.orb) return place(name, picked.orb)
+    if (boxes[name]) return sendBack(name)
+    setPicked(picked?.row === name ? null : { row: name })
+  }
+
+  function tapOrb(orb, d) {
+    if (moved.current) return // end of a swipe
+    setRot((r) => r + d) // bring it to the center
+    if (picked?.row) return place(picked.row, orb.voice)
+    if (picked?.orb === orb.voice) return setPicked(null)
+    setPicked({ orb: orb.voice })
+    if (orb !== READER) preview(orb.voice, orb.name)
+  }
+
+  // Swipe: drag the ring sideways; on release it snaps to the nearest slot.
+  function onPointerDown(e) {
+    const x0 = e.clientX
+    const r0 = rot
+    moved.current = false
+    const move = (ev) => {
+      const dx = ev.clientX - x0
+      if (Math.abs(dx) > 6) { moved.current = true; setDragging(true) }
+      if (moved.current) setRot(r0 - dx / STEP)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      setDragging(false)
+      setRot((r) => Math.round(r))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const start = () => {
+    narrator.pause()
+    unlock() // Safari plays narration only after a tap
+    const cast = Object.fromEntries(Object.entries(boxes).map(([name, v]) => [name, v === READER.voice ? '' : v]))
+    onStart({ ...cast, Onomatopoeia: cast.Narrator }) // sound words are always read by whoever reads the Narrator
+  }
+
   return (
-    <div className="container py-3 editor cast">
+    <div className="container py-3 cast">
       <div className="d-flex align-items-center gap-2 mb-3">
         <button type="button" className="btn btn-outline-light" onClick={onBack}>Back</button>
         <h1 className="h3 mb-0 me-auto">Who reads?</h1>
-        <button type="button" className="btn btn-primary" disabled={!cast}
-          onClick={() => { narrator.pause(); unlock(); onStart(cast) }} /* unlock: Safari plays narration only after a tap */>Start</button>
+        <button type="button" className="btn btn-primary" disabled={!boxes} onClick={start}>Start</button>
       </div>
       {error && <div className="alert alert-danger">Couldn't load book: {error}</div>}
-      {!error && !cast && <p>Loading...</p>}
-      {cast && Object.entries(cast).map(([name, voice]) => (
-        <div className="cast-row" key={name}>
-          <span className="cast-dot" style={{ background: VOICES.find((v) => v.voice === voice)?.color ?? 'transparent' }} />
-          <label className="cast-name" htmlFor={`cast-${name}`}>{name}</label>
-          <select id={`cast-${name}`} className="form-select" value={voice}
-            onChange={(e) => setCast({ ...cast, [name]: e.target.value })}>
-            <option value="">Reader (me)</option>
-            {VOICES.map((v) => <option key={v.voice} value={v.voice}>{v.name}</option>)}
-          </select>
-          <button type="button" className="cast-play" aria-label={`Hear ${name}'s voice`}
-            style={{ visibility: voice ? 'visible' : 'hidden' }} onClick={() => preview(name)}>{PlayIcon}</button>
+      {!error && !boxes && <p>Loading...</p>}
+
+      {boxes && Object.entries(boxes).map(([name, key]) => {
+        const orb = key && orbOf(key)
+        return (
+          <div className={`cast-row${picked?.row === name ? ' picked' : ''}`} key={name}>
+            {name === 'Narrator' // not pictured in the book: a placeholder, nothing to crop
+              ? <span className="cast-face"><PersonSilhouette className="cast-page cast-silhouette" /></span>
+              : <button type="button" className="cast-face" onClick={() => setCropping(name)}
+                aria-label={faces[name] ? `${name}'s picture. Tap to crop again` : `Crop a picture of ${name}`}>
+                {faces[name] || firstImg[name]
+                  ? <img className="cast-page" src={`/images/${id}/${faces[name] || firstImg[name]}`} alt="" loading="lazy" />
+                  : <span className="cast-page" />}
+                <span className="cast-face-badge" aria-hidden="true">{faces[name] ? '✎' : '✂'}</span>
+              </button>}
+            <button type="button" className="cast-who" onClick={() => tapBox(name)} aria-label={`Choose a voice for ${name}`}>
+              <span className="cast-name">{name}</span>
+            </button>
+            <span className="cast-slot">
+            <button type="button" ref={(el) => { boxRefs.current[name] = el }}
+              className={`cast-box${picked?.orb ? ' ready' : ''}`} onClick={() => tapBox(name)}
+              aria-label={orb ? `${name}: ${orb.name}. Tap to ${picked?.orb ? 'swap' : 'remove'}` : `${name}: empty (Reader). Tap to place a voice`}>
+              {orb && !hidden.has(`box:${name}`) && <Orb orb={orb} size={48} label={false} />}
+            </button>
+            <span className="cast-box-name">{orb ? orb.name : 'Reader'}</span>
+            </span>
+            <button type="button" className="cast-play" aria-label={`Hear ${name}'s voice`}
+              style={{ visibility: orb && orb !== READER ? 'visible' : 'hidden' }}
+              onClick={() => preview(key, orb.name)}>{PlayIcon}</button>
+          </div>
+        )
+      })}
+      {boxes && <p className="cast-hint">Tap a voice, then a character's circle. Empty circles are read by you.</p>}
+
+      {boxes && (
+        <div className="cast-ring" ref={ringRef} onPointerDown={onPointerDown}>
+          <button type="button" className="cast-ring-arrow left" aria-label="Previous voice" onClick={() => setRot((r) => r - 1)}>‹</button>
+          <span className="cast-ring-center" aria-hidden="true" />
+          {ring.map((orb, i) => {
+            let d = (((i - rot) % n) + n) % n
+            if (d > n / 2) d -= n
+            const a = Math.min(Math.abs(d), 3)
+            return (
+              <button type="button" key={orb.voice} ref={(el) => { orbRefs.current[orb.voice] = el }}
+                className={`cast-ring-item${picked?.orb === orb.voice ? ' picked' : ''}${dragging ? ' dragging' : ''}`}
+                style={{ transform: `translateX(calc(-50% + ${d * STEP}px)) scale(${1 - a * 0.18})`, opacity: 1 - a * 0.28,
+                  zIndex: 10 - Math.round(a), visibility: hidden.has(`ring:${orb.voice}`) || Math.abs(d) > 3 ? 'hidden' : 'visible' }}
+                aria-pressed={picked?.orb === orb.voice} onClick={() => tapOrb(orb, d)}>
+                <Orb orb={orb} />
+              </button>
+            )
+          })}
+          <button type="button" className="cast-ring-arrow right" aria-label="Next voice" onClick={() => setRot((r) => r + 1)}>›</button>
         </div>
-      ))}
+      )}
+      {cropping && (
+        <Cropper id={id} name={cropping} pages={pageImgs} start={firstImg[cropping]}
+          onCancel={() => setCropping(null)}
+          onDone={(img) => { setFaces((f) => ({ ...f, [cropping]: img })); setCropping(null) }} />
+      )}
     </div>
   )
 }

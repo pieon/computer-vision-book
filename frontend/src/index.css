@@ -152,6 +152,8 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader .reader-controls button:disabled { opacity: 0.35; }
 
 /* Edit Book (BookEditor.jsx): page photo, then one row per line: speaker, text, move/delete */
+/* Edit panel over the reader (Book.jsx); above the camera, controls and library backdrop (z 20) */
+.reader-edit { position: fixed; inset: 0; z-index: 30; overflow-y: auto; background: var(--bs-body-bg, #212529); }
 .editor .editor-photo { display: block; max-width: 100%; max-height: 40vh; margin: 0 auto 16px; border-radius: 8px; }
 .editor .editor-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #ffffff1f; }
 .editor .editor-line .form-select { flex: 0 1 180px; }
@@ -188,12 +190,58 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor .pages-flag-note { color: #ff453a; }
 
 /* Cast (who reads?): one row per character, its voice picker and a preview button */
-.cast .cast-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ffffff1f; }
-.cast .cast-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1px solid #ffffff40; }
-.cast .cast-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.cast .form-select { width: auto; max-width: 55%; }
+/* Who reads? (Cast.jsx): character rows with their first page and a box; a ring of voice orbs pinned to the bottom */
+.cast { padding-bottom: 190px !important; } /* clears the ring */
+.cast .cast-row { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid #ffffff1f; border-radius: 12px; }
+.cast .cast-row.picked { background: #ffffff14; }
+.cast .cast-who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.cast .cast-page { flex: none; display: block; width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: #ffffff14; }
+.cast .cast-face { flex: none; position: relative; padding: 0; border: 0; background: none; }
+.cast .cast-silhouette { fill: currentColor; color: #ffffff59; } /* the Narrator's placeholder picture */
+.cast .cast-face-badge { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; background: #5b9bff; color: #fff; box-shadow: 0 0 0 2px var(--bs-body-bg, #212529); }
+/* Cast: crop a character's picture from a page (components/Cropper.jsx) */
+.cropper { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
+.cropper-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.cropper-bar .form-range { flex: 1; }
+.cropper-stage { position: relative; flex: 1; overflow: hidden; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.cropper-stage img { max-width: 100%; max-height: 100%; user-select: none; -webkit-user-select: none; }
+.cropper-frame { position: absolute; left: 50%; top: 50%; width: min(70vmin, 90%); aspect-ratio: 1; transform: translate(-50%, -50%);
+  border: 2px solid #fff; border-radius: 12px; box-shadow: 0 0 0 100vmax #000a; pointer-events: none; }
+.cropper-hint { margin: 0 0 12px; text-align: center; font-size: .85rem; opacity: .7; }
+.cast .cast-name { min-width: 0; overflow-wrap: break-word; font-weight: 600; }
+.cast .cast-box { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 2px dashed #ffffff40; background: none; display: grid; place-items: center; padding: 0; transition: border-color .2s, box-shadow .2s; }
+.cast .cast-box.ready { border-style: solid; border-color: #5b9bff; box-shadow: 0 0 12px #5b9bff80; }
+.cast .cast-slot { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cast .cast-box-name { font-size: .75rem; color: #ffffffb0; text-align: center; line-height: 1.2; }
 .cast .cast-play { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: none; color: inherit; display: grid; place-items: center; padding: 0; }
 .cast .cast-play svg { width: 18px; height: 18px; }
+.cast .cast-hint { margin: 12px 0 0; font-size: .9rem; color: #ffffff99; text-align: center; }
+/* Grok-style glowing orb in its voice color (--c), --s across, shaped by --r, with two blinking eyes */
+.cast-orb { display: block; position: relative; width: calc(var(--s, 56px) * var(--w, 1)); height: var(--s, 56px); border-radius: var(--r, 50%);
+  background: radial-gradient(circle at 32% 28%, #fff9 0, var(--c) 42%, color-mix(in srgb, var(--c) 55%, #000) 100%);
+  box-shadow: 0 0 18px 2px color-mix(in srgb, var(--c) 60%, transparent), inset 0 -6px 14px #0004; }
+.cast-orb-reader { background: radial-gradient(circle at 32% 28%, #fff 0, #f5f5f5 45%, #b9bec6 100%); box-shadow: 0 0 18px 2px #ffffff70, inset 0 -6px 14px #0003; }
+.cast-orb::before, .cast-orb::after { content: ''; position: absolute; top: 38%; width: calc(var(--s, 56px) * .1); height: calc(var(--s, 56px) * .2);
+  border-radius: 99px; background: #15171ae6; transition: top .2s; animation: cast-blink 5s var(--d, 0s) infinite; }
+.cast-orb::before { left: calc(50% - var(--s, 56px) * .2); }
+.cast-orb::after { right: calc(50% - var(--s, 56px) * .2); }
+.cast-ring-item.picked .cast-orb::before, .cast-ring-item.picked .cast-orb::after { top: 30%; } /* looks up when picked */
+@keyframes cast-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@media (prefers-reduced-motion: reduce) { .cast-orb::before, .cast-orb::after { animation: none; } }
+.cast-orb-flying { position: fixed; z-index: 50; pointer-events: none; }
+.cast-orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cast-orb-name { font-size: .8rem; white-space: nowrap; color: #fff; }
+.cast .cast-ring { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: 170px; overflow: hidden; touch-action: pan-y; user-select: none;
+  background: #16181bf2; border-top: 1px solid #ffffff1f; }
+.cast .cast-ring-center { position: absolute; left: 50%; top: 24px; width: 56px; height: 56px; transform: translateX(-50%); pointer-events: none; }
+.cast .cast-ring-item { position: absolute; left: 50%; top: 24px; padding: 0; border: 0; background: none; color: inherit; transition: transform .3s ease, opacity .3s ease; }
+.cast .cast-ring-item.dragging { transition: none; }
+.cast .cast-ring-item.picked .cast-orb { transform: scale(1.12); box-shadow: 0 0 30px 8px color-mix(in srgb, var(--c) 75%, transparent), inset 0 -6px 14px #0004; }
+.cast .cast-ring-item .cast-orb { transition: transform .2s, box-shadow .2s; }
+.cast .cast-ring-arrow { position: absolute; top: 34px; z-index: 20; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: #16181bcc; color: #fff; font-size: 1.5rem; line-height: 1; padding: 0; }
+.cast .cast-ring-arrow.left { left: 12px; }
+.cast .cast-ring-arrow.right { right: 12px; }
 
 /* how far the voiced line's clip has played (Book.jsx); not shown on the reader's own lines */
 .reader .reader-cue { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; min-height: 120px; justify-content: center; }
@@ -205,3 +253,8 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader .reader-tts::-webkit-progress-bar { background: #ffffff26; }
 .reader .reader-tts::-webkit-progress-value { background: #5b9bff; }
 .reader .reader-tts::-moz-progress-bar { background: #5b9bff; }
+
+/* Edit Book (PageList.jsx): the title is a button that turns into a text box */
+.pages-title { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left;
+  text-decoration: underline dotted #ffffff60; text-underline-offset: 6px; }
+.pages-title-input { font-size: 1.25rem; font-weight: 500; max-width: 100%; }

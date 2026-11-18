@@ -2,12 +2,29 @@
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+import asyncio
+import os
+
 import backend.clients.arc as arc
+from backend.config import IMG_DIR
 from backend.db import books
-from backend.routes.books import Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books, reorder_pages
+from backend.routes.books import (BookName, Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books,
+                                  rename_book, reorder_pages, set_face)
 from backend.routes.scan import commit_page, image_name
 
 BOOK = "zz-test-edit"  # throwaway id, deleted at the end
+
+
+class Body:  # stands in for the Request set_face reads the JPEG from
+    def __init__(self, data):
+        self.data = data
+
+    async def body(self):
+        return self.data
+
+
+def face(name, data=b"\xff\xd8 fake jpeg"):
+    return asyncio.run(set_face(Body(data), BOOK, name))
 
 
 def offline(prompt):
@@ -34,6 +51,22 @@ try:
     assert [c["Name"] for c in book[0]["Book"]["Characters"]] == ["Narrator", "Zoe"]  # "Unknown" gone, Zoe added
     assert row()["unknown"] == []  # flag cleared in the Library
 
+    # Cast screen face crops: stored on the character, kept through page edits, replaced files deleted
+    zoe = lambda: next(c for c in books.find_one({"_id": BOOK})["book"][0]["Book"]["Characters"] if c["Name"] == "Zoe")  # noqa: E731
+    first = face("Zoe")["img"]
+    assert zoe()["img"] == first and os.path.isfile(os.path.join(IMG_DIR, BOOK, first))
+    edit_page(PageEdit(text=[{"Character": "Zoe", "Dialogue": '"Who is there?"'},
+                             {"Character": "Narrator", "Dialogue": "She looked around."}]), BOOK, "PageOne")
+    assert zoe()["img"] == first  # a page edit rebuilds Characters but keeps the face
+    second = face("Zoe")["img"]
+    assert second != first and zoe()["img"] == second and not os.path.exists(os.path.join(IMG_DIR, BOOK, first))
+    for name, data, code in (("Zoe", b"not a jpeg", 400), ("Nobody", b"\xff\xd8", 404)):
+        try:
+            face(name, data)
+            raise AssertionError(f"expected {code}")
+        except HTTPException as e:
+            assert e.status_code == code
+
     try:
         edit_page(PageEdit(text=[]), BOOK, "PageNine")
         raise AssertionError("expected 404")
@@ -44,6 +77,21 @@ try:
         raise AssertionError("expected a validation error")
     except ValidationError:
         pass
+    # rename: trimmed, shown in the Library, kept through a line edit; a blank name or unknown book is refused
+    assert rename_book(BookName(name="  My Book  "), BOOK) == {"name": "My Book"}
+    assert row()["name"] == "My Book", row()
+    edit_page(PageEdit(text=[{"Character": "Zoe", "Dialogue": '"Who is there?"'}]), BOOK, "PageOne")
+    assert row()["name"] == "My Book"
+    try:
+        BookName(name="   ")
+        raise AssertionError("expected a validation error")
+    except ValidationError:
+        pass
+    try:
+        rename_book(BookName(name="x"), "zz-no-such-book")
+        raise AssertionError("expected 404")
+    except HTTPException as e:
+        assert e.status_code == 404
     # flags: shown per page in the Library row, kept through line edits, cleared by unflagging
     assert row()["flagged"] == []
     flag_page(Flag(flagged=True), BOOK, "PageOne")

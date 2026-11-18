@@ -1,7 +1,10 @@
 """POST a photo to /scan?book=<id>&n=<page index, 0 = cover> and it's unwarped, OCR'd and saved as that page of the
 book in MongoDB; several pages may be sent at once. Page images go to output/books/<id>/. Replies {"page": "PageOne", "book": <the whole book>, "times": {step: seconds}};
 times are also printed per scan."""
+import base64
 import os
+import re
+import shutil
 import tempfile
 import threading
 import time
@@ -16,14 +19,16 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 
 from backend import reading_log
-from backend.config import IMG_DIR, WEIGHTS
-from backend.db import BOOK_ID, books, lock
+from backend.config import IMG_DIR, ROOT, WEIGHTS
+from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, build_page, find_names, page_key
+from backend.clients.arc import decide
 from backend.pipeline.ocr import ocr
 from backend.pipeline.unwarp.unwarp_flip import unwarp_img
 from backend.pipeline.unwarp.utils import IMG_SIZE, load_model
 
 router = APIRouter()
+SHEET_DIR = os.path.join(ROOT, "output", "turn_sheets")  # every /turn/decide sheet, one folder per reading
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = load_model(WEIGHTS).to(device).eval()
 
@@ -60,7 +65,9 @@ def add_page(book_id, n, photo, times):
     """Unwarp + OCR one photo and save it as page `n` of the book (0 = cover). Several pages can be in here at once:
     unwarp takes turns (unwarp_lock) and OCR, the slow part, runs in parallel; only the DB update takes the book lock.
     Nothing is saved to the DB unless OCR succeeds. Fills `times` with seconds per step, so even a failed page shows
-    where the time went."""
+    where the time went. (None, None) if the book was deleted meanwhile."""
+    if book_id in deleted:  # cancelled while this page waited: skip the unwarp and OCR
+        return None, None
     img_dir = os.path.join(IMG_DIR, book_id)
     os.makedirs(img_dir, exist_ok=True)
     img = image_name(book_id, n)
@@ -80,6 +87,9 @@ def commit_page(book_id, n, img, text, times):
     with timed(times, "wait"):  # another page is updating this book's doc
         lock.acquire()
     try:
+        if book_id in deleted:  # deleted while this page was processing: don't let the upsert bring it back
+            shutil.rmtree(os.path.join(IMG_DIR, book_id), ignore_errors=True)  # this page's image re-created it
+            return None, None
         with timed(times, "db_read"):
             doc = books.find_one({"_id": book_id}) or {}
         texts = doc.get("texts", [])
@@ -95,7 +105,7 @@ def commit_page(book_id, n, img, text, times):
             pages = {page_key(i): pages[page_key(i)] for i in range(len(texts)) if page_key(i) in pages}
             cover = (texts[0] or "").strip().split("\n")[0][:80]
             name = cover if n == 0 and cover else (doc["book"][0]["Book"]["Name"] if doc else f"Book {book_id}")
-            book = book_json(name, pages, names)
+            book = book_json(name, pages, names, doc["book"][0]["Book"]["Characters"] if doc else ())
         now = datetime.now(timezone.utc)
         with timed(times, "db_write"):
             books.update_one({"_id": book_id},
@@ -127,6 +137,41 @@ def page_after_turn(book_id, page, photo, times):
             unwarp_img(model, device, src, IMG_SIZE, out, flip=False)  # same as add_page: the app already mirrored it
         with timed(times, "match"):
             return image_page_check(out, paths, page)
+
+
+def sheet_decision(sheet, page, reading, times):
+    """Ask ARC's decision model if the 10-frame sheet (Book.jsx/camera.js frameSheet: 5x2 grid, numbered in time
+    order) shows a page being turned. Saves the sheet under output/turn_sheets/<reading>/ with the answer in its
+    name. {"moving", "p", "error", "saved"}; never raises, so a failed ARC call just means "not turned" this round."""
+    q = {"turn": {"type": "choice",
+                  "instructions": "One image with 10 numbered camera frames of a children's book, in time order: "
+                                  "1-5 on the top row left to right, then 6-10 on the bottom row. "
+                                  "Is a page being turned to the next page in these frames?",
+                  "criteria": {"moving": "a page is being turned or has just been turned",
+                               "still": "the same page stays open; no page turn"}}}
+    result = {"moving": None, "p": None, "error": None}
+    try:
+        with timed(times, "decide"):
+            url = f"data:image/jpeg;base64,{base64.b64encode(sheet).decode()}"
+            a = decide("Page-turn check for a children's picture book.", q, [url])["turn"]
+        result.update(moving=a["choice"] == "moving", p=round(a["probabilities"][a["choice"]], 3))
+    except Exception as e:
+        result["error"] = repr(e)[:200]
+    label = "error" if result["error"] else f"{'moving' if result['moving'] else 'still'}_p{result['p']}"
+    result["saved"] = save_sheet(sheet, page, reading, label)
+    return result
+
+
+def save_sheet(sheet, page, reading, label):
+    """Write a 10-frame sheet to output/turn_sheets/<reading>/<time>_p<page>_<label>.jpg; returns that path,
+    relative to the repo."""
+    # ponytail: sheets are kept forever (~100 KB each); delete output/turn_sheets/ when done looking
+    folder = os.path.join(SHEET_DIR, re.sub(r"[^A-Za-z0-9_-]", "_", reading) or "no-reading")
+    os.makedirs(folder, exist_ok=True)
+    name = f"{datetime.now().strftime('%H-%M-%S-%f')[:-3]}_p{page + 1}_{label}.jpg"
+    with open(os.path.join(folder, name), "wb") as f:
+        f.write(sheet)
+    return os.path.relpath(os.path.join(folder, name), ROOT)
 
 
 def _features(path, width=800):
@@ -181,6 +226,30 @@ async def turn(request: Request, book: str = Query(pattern=BOOK_ID), page: int =
     report(book, f"turn {page} -> {best}", times)
     reading_log.log(reading, "turn", f"on page {page} -> {best}, scores {scores} | {times}")
     return {"page": best, "scores": scores, "times": times}
+
+
+@router.post("/turn/decide")
+async def turn_decide(request: Request, book: str = Query(pattern=BOOK_ID), page: int = Query(ge=0), reading: str = ""):
+    """The reader's page-turn check (Book.jsx turns on "moving"): POST a 10-frame sheet JPEG, get the decision model's
+    {"moving": bool, "p": probability, "error", "saved": sheet path, "times": {step: seconds}}."""
+    times = {}
+    with timed(times, "upload"):
+        sheet = await request.body()
+    result = await run_in_threadpool(sheet_decision, sheet, page, reading, times)
+    report(book, f"turn decide on {page} -> {result['error'] or result['moving']}", times)
+    reading_log.log(reading, "turn decide", f"on page {page} -> {result} | {times}")
+    return {**result, "times": times}
+
+
+@router.post("/turn/sheet")
+async def turn_sheet(request: Request, book: str = Query(pattern=BOOK_ID), page: int = Query(ge=0), reading: str = "",
+                     motion: float = Query(0, ge=0, le=100)):
+    """Save only (no model call): a 10-frame sheet the reader took when the camera moved while it waited for a page
+    turn (Book.jsx SAVE_SHEETS). Replies {"saved": path}."""
+    sheet = await request.body()
+    saved = await run_in_threadpool(save_sheet, sheet, page, reading, f"motion{motion:.0f}")
+    reading_log.log(reading, "turn sheet", f"on page {page}, motion {motion:.1f} -> {saved}")
+    return {"saved": saved}
 
 
 @router.post("/scan")

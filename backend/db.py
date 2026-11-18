@@ -15,3 +15,6 @@ reading = db.reading
 # guards a book doc's read-modify-write while pages are added (OCR itself runs outside it, in parallel)
 # ponytail: one global lock for all books; per-book locks if several scanners share a server
 lock = threading.Lock()
+# ids of deleted books: a page still processing when its book is deleted is dropped instead of re-creating the book
+# ponytail: in memory; a restart forgets it, but also kills the pages still processing
+deleted = set()

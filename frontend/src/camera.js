@@ -46,6 +46,38 @@ export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, zoom
   canvas.toBlob((blob) => blob && onPhoto({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', quality)
 }
 
+// Zoetrope-style sheet for the decision model's page-turn check: `frames` full-frame shots `gapMs` apart, mirrored like
+// snap(), drawn into a `cols`-wide grid in time order (left to right, then the next row), each numbered 1..frames in
+// its corner. onSheet({ blob, ms }) gets the JPEG and how long capturing took; returns a stop function.
+export function frameSheet(video, onSheet, { frames = 10, gapMs = 150, cols = 5, w = 320 } = {}) {
+  const h = Math.round((w * video.videoHeight) / video.videoWidth)
+  const canvas = document.createElement('canvas')
+  canvas.width = cols * w
+  canvas.height = Math.ceil(frames / cols) * h
+  const ctx = canvas.getContext('2d')
+  ctx.font = 'bold 20px sans-serif'
+  const startAt = performance.now()
+  let i = 0
+  const timer = setInterval(() => {
+    const x = (i % cols) * w
+    const y = Math.floor(i / cols) * h
+    ctx.save()
+    ctx.translate(x + w, y)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, ...crop(video, 1), 0, 0, w, h)
+    ctx.restore()
+    ctx.fillStyle = '#000'
+    ctx.fillRect(x, y, 32, 26)
+    ctx.fillStyle = '#fff'
+    ctx.fillText(String(i + 1), x + 5, y + 20)
+    if (++i < frames) return
+    clearInterval(timer)
+    const ms = performance.now() - startAt
+    canvas.toBlob((blob) => blob && onSheet({ blob, ms }), 'image/jpeg', 0.8)
+  }, gapMs)
+  return () => clearInterval(timer)
+}
+
 // Motion score every 100 ms: % of pixels (160px-wide crop, green channel) that changed by more than 25 since the last
 // frame, over the same crop(video, zoom) a snap would take. onScore(score) gets it; returns a stop function.
 export function watchMotion(video, onScore, zoom = 1.5) {

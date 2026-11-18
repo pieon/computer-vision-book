@@ -19,3 +19,11 @@ export const PrevPageIcon = icon(<><path d="M20 16a8 8 0 0 0-16 0" /><path d="M1
 export const NextPageIcon = icon(<><path d="M4 16a8 8 0 0 1 16 0" /><path d="M17 13l3 3 3-3" /></>)
 export const MicIcon = icon(<><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" /></>)
 export const FlagIcon = icon(<path d="M5 21V4h11l-2 4 2 4H5" />) // outlined; CSS fills it when flagged
+
+// Grey head-and-shoulders placeholder for someone with no picture (the Narrator on the Cast screen); filled, so not icon()
+export const PersonSilhouette = ({ className }) => (
+  <svg className={className} viewBox="0 0 56 56" aria-hidden="true">
+    <circle cx="28" cy="21" r="10" />
+    <path d="M8 56c0-12 9-20 20-20s20 8 20 20z" />
+  </svg>
+)

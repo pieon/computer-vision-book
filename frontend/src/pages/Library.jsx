@@ -90,7 +90,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   async function remove(book) {
     if (!window.confirm(`Delete "${book.name}" (${book.pages} pages)? This can't be undone.`)) return
     try {
-      await cancelUploads(book.id) // a book still processing: stop its queue first, or it would come back
+      cancelUploads(book.id) // a book still processing: stop its queue too (the server drops its late pages)
       await removeUrl(`/books/${book.id}`)
       setBooks((list) => list.filter((b) => b.id !== book.id))
     } catch (e) {

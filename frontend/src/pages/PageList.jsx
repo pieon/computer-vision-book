@@ -10,6 +10,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
   const [book, setBook] = useState(null) // Book2 "Book" object
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [naming, setNaming] = useState(null) // the title being typed, or null when not renaming
   const queue = useScanQueue() // re-render (and reload below) as added pages finish
   // pages are placed by position as they upload, so moving or deleting meanwhile would put them in the wrong slot
   const uploading = scanning().includes(id)
@@ -52,6 +53,20 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
       window.alert(`Couldn't clear the flag: ${e.message}`)
     }
   }
+  // Tap the title to rename: Enter or leaving the box saves, Escape cancels; blank or unchanged saves nothing.
+  async function rename() {
+    const name = naming?.trim()
+    setNaming(null)
+    if (!name || name === book.Name) return
+    const old = book.Name
+    setBook((b) => ({ ...b, Name: name }))
+    try {
+      await request(`/books/${id}/name`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+    } catch (e) {
+      setBook((b) => ({ ...b, Name: old }))
+      window.alert(`Couldn't rename the book: ${e.message}`)
+    }
+  }
   function del(i) {
     if (!window.confirm(`Delete page ${i + 1} and its photo? This can't be undone.`)) return
     apply(`/books/${id}/pages/${pages[i][0]}`, { method: 'DELETE' }, 'delete the page')
@@ -60,7 +75,16 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
   return (
     <div className="container py-3 editor">
       <div className="d-flex align-items-center gap-2 mb-3">
-        <h1 className="h4 me-auto mb-0">Edit {book.Name}</h1>
+        {naming === null ? (
+          <h1 className="h4 me-auto mb-0">
+            <button type="button" className="pages-title" onClick={() => setNaming(book.Name)}
+              aria-label={`${book.Name}. Tap to rename`} title="Tap to rename">{book.Name}</button>
+          </h1>
+        ) : (
+          <input className="form-control me-auto pages-title-input" aria-label="Book title" autoFocus maxLength={120}
+            value={naming} onChange={(e) => setNaming(e.target.value)} onBlur={rename}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setNaming(null) }} />
+        )}
         <button type="button" className="btn btn-outline-light" onClick={onBack}>Back</button>
       </div>
       {uploading && <p className="text-secondary" role="status">New pages are still uploading; moving and deleting unlock when they're done.</p>}

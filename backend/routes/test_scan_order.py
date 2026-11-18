@@ -1,6 +1,6 @@
 """Check that pages saved out of order end up in page order. Run from the repo root:
 python -m backend.routes.test_scan_order (needs MongoDB, not the VPN: no unwarp or OCR, just the DB step)."""
-from backend.db import books
+from backend.db import books, deleted
 from backend.routes.scan import commit_page
 
 BOOK = "zz-test-order"  # throwaway id, deleted at the end
@@ -33,6 +33,20 @@ def test_gap_while_processing():
         books.delete_one({"_id": BOOK})
 
 
+def test_deleted_book_not_recreated():
+    """A page that finishes after its book was deleted (Cancel in the Scanner) must not bring the book back."""
+    books.delete_one({"_id": BOOK})
+    deleted.add(BOOK)
+    try:
+        assert commit_page(BOOK, 0, "page_001.png", "The Big Day", {}) == (None, None)
+        assert books.find_one({"_id": BOOK}) is None
+    finally:
+        deleted.discard(BOOK)
+        books.delete_one({"_id": BOOK})
+
+
 if __name__ == "__main__":
     test_out_of_order()
     test_gap_while_processing()
+    test_deleted_book_not_recreated()
+    print("ok")

@@ -59,23 +59,20 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     })
   }
 
-  // Cancel scanning: drop this book from the DB (JSON and page images) and leave.
+  // Cancel scanning: leave right away and drop this book from the DB (JSON and page images) in the background; the
+  // server drops pages still processing for it (backend/routes/scan.py). If that fails the book shows in the Library.
   // Adding to an existing book: just stop; photos not uploaded yet are dropped, pages already saved stay.
-  async function cancel() {
+  function cancel() {
     const n = taken.length
     if (start) {
       if (n && !window.confirm('Stop adding pages? Photos not uploaded yet are dropped; pages already saved stay in the book.')) return
-      await cancelUploads(bookId)
+      cancelUploads(bookId)
       return onCancel()
     }
     if (n && !window.confirm(`Discard this book and its ${n} scanned page${n === 1 ? '' : 's'}?`)) return
-    try {
-      await cancelUploads(bookId) // pages still waiting aren't sent; the one uploading finishes first
-      await remove(`/books/${bookId}`) // nothing saved yet counts as done
-      onCancel()
-    } catch (e) {
-      window.alert(`Couldn't discard the book: ${e.message}`)
-    }
+    cancelUploads(bookId)
+    remove(`/books/${bookId}`).catch((e) => console.warn(`[scan] couldn't discard book ${bookId}:`, e)) // 404 counts as done
+    onCancel()
   }
 
   // Auto-capture: wait for motion (page turn), then snap once it has been still for 1 s.

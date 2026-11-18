@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { getJson, request, timing, ttsUrl } from '../api.js'
-import { snap, startCamera } from '../camera.js'
+import { frameSheet, snap, startCamera, watchMotion } from '../camera.js'
 import { FlagIcon, MicIcon, NextIcon, NextPageIcon, PauseIcon, PlayIcon, PrevIcon, PrevPageIcon } from '../components/icons.jsx'
 import { narrator } from '../narrator.js'
+import BookEditor from './BookEditor.jsx'
 import { isRead, variants, words } from '../reading.js'
 
 // Connect to deepgram and stream the mic input to the deepgram api. Disconnect mic stream upon closing.
@@ -32,6 +33,92 @@ function listen(mic, reading, book, onText) {
     if (recorder?.state === 'recording') recorder.stop()
     socket.close()
   }
+}
+
+// Decide between 'orb' or 'decision'
+const TURN_CHECK = 'orb'
+// Save 10 frames of image if the motion score goes over SHEET_MOTION
+const SAVE_SHEETS = true
+// Indicator to take picture
+const SHEET_MOTION = 8
+
+// Console badges for the page-turn checks (filter "ORB" / "DECISION")
+const BADGE = {
+  orb: 'background:#1e6fd9;color:#fff;font-weight:bold;border-radius:3px',
+  decision: 'background:#e67e22;color:#fff;font-weight:bold;border-radius:3px',
+  sheet: 'background:#8e44ad;color:#fff;font-weight:bold;border-radius:3px',
+  yes: 'color:#27ae60;font-weight:bold', // turned / moving
+  no: 'color:inherit',
+  err: 'color:#e74c3c;font-weight:bold',
+}
+
+// ponytail: one request in flight at a time, nonstop while waiting; add a short gap if the server load matters
+const TURN_CHECKS = {
+  orb(video, query, page, goTo) {
+    let stopped = false
+    const check = () => snap(video, ({ blob, url }) => {
+      URL.revokeObjectURL(url)
+      const sentAt = performance.now()
+      request(`/turn?${query}`, { method: 'POST', body: blob })
+        .then(({ page: p, scores, times }) => {
+          const inliers = Object.entries(scores).map(([k, v]) => `p${+k + 1} ${v}`).join(', ')
+          console.log(`%c ORB %c page ${page + 1} → ${p !== page ? `TURNED to page ${p + 1}` : 'same page'}`
+            + ` · inliers ${inliers} (25 to turn)${stopped ? ' · (after turn)' : ''}`, BADGE.orb, p !== page ? BADGE.yes : BADGE.no,
+          `| ${Math.round(blob.size / 1024)} KB |`, timing({}, times, performance.now() - sentAt))
+          if (!stopped && p !== page) goTo(p)
+        })
+        .catch((e) => console.log('%c ORB %c failed', BADGE.orb, BADGE.err, e))
+        .finally(() => { if (!stopped) check() })
+    }, { maxWidth: 1400, quality: 0.8, zoom: 1 }) // full frame: unwarp finds the page wherever the book sits
+    check()
+    return () => { stopped = true }
+  },
+
+  // a sheet done while a request is in flight is dropped
+  // ponytail: any "moving" turns, whatever its p; add a cutoff (e.g. p >= 0.8) if it turns too early
+  decision(video, query, page, goTo) {
+    let stopped = false
+    let deciding = false
+    let stopSheet = () => {}
+    const sheet = () => {
+      stopSheet = frameSheet(video, ({ blob, ms }) => {
+        if (!stopped) sheet() // start the next sheet right away
+        if (deciding) return
+        deciding = true
+        const sentAt = performance.now()
+        request(`/turn/decide?${query}`, { method: 'POST', body: blob })
+          .then(({ moving, p, error, saved, times }) => {
+            const answer = error ? `error ${error}` : moving ? `MOVING (p ${p}) → page ${page + 2}` : `still (p ${p})`
+            console.log(`%c DECISION %c page ${page + 1} · ${answer}${stopped ? ' · (after turn)' : ''}`,
+              BADGE.decision, error ? BADGE.err : moving ? BADGE.yes : BADGE.no,
+              `| ${saved} |`, timing({ capture: ms }, times, performance.now() - sentAt))
+            if (!stopped && moving) goTo(page + 1)
+          })
+          .catch((e) => console.log('%c DECISION %c failed', BADGE.decision, BADGE.err, e))
+          .finally(() => { deciding = false })
+      })
+    }
+    sheet()
+    return () => { stopped = true; stopSheet() }
+  },
+}
+
+// Motion over SHEET_MOTION starts a sheet (one at a time); the next can start once it's saved and the camera moves
+// again. A sheet already started keeps going after the wait ends (the page turned), so it holds the whole flip.
+function recordSheets(video, query, page) {
+  let recording = false
+  const stopMotion = watchMotion(video, (score) => {
+    if (recording || score <= SHEET_MOTION) return
+    recording = true
+    frameSheet(video, ({ blob }) => {
+      request(`/turn/sheet?${query}&motion=${score.toFixed(1)}`, { method: 'POST', body: blob })
+        .then(({ saved }) => console.log(`%c SHEET %c page ${page + 1} · motion ${score.toFixed(1)}% → ${saved}`,
+          BADGE.sheet, BADGE.no))
+        .catch((e) => console.log('%c SHEET %c failed', BADGE.sheet, BADGE.err, e))
+        .finally(() => { recording = false })
+    })
+  }, 1) // full frame, same as the sheet
+  return stopMotion
 }
 
 const constraints = { video: { facingMode: 'user', width: { ideal: 4032 }, height: { ideal: 3024 } }, audio: { echoCancellation: true, noiseSuppression: true } }
@@ -104,12 +191,26 @@ export default function Book({ id, cast, onBack }) {
       .finally(() => { asking.current = false })
   }
 
+  // keys keep insertion order: Cover, PageOne, ...; each page keeps its key for the flag button
+  const load = () => getJson(`/books/${id}`)
+    .then((book) => Object.entries(book[0].Book.Pages).map(([key, p]) => ({ ...p, key })))
   useEffect(() => {
-    getJson(`/books/${id}`)
-      // keys keep insertion order: Cover, PageOne, ...; each page keeps its key for the flag button
-      .then((book) => setPages(Object.entries(book[0].Book.Pages).map(([key, p]) => ({ ...p, key }))))
-      .catch((e) => setError(e.message))
-  }, [id])
+    load().then(setPages).catch((e) => setError(e.message))
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps -- load only uses id
+
+  const [editing, setEditing] = useState(false)
+  const wasPaused = useRef(false)
+  function openEdit() {
+    wasPaused.current = paused
+    setPaused(true)
+    setEditing(true)
+  }
+  function closeEdit() {
+    load()
+      .then((ps) => { setPages(ps); setLine((l) => Math.min(l, Math.max(0, ps[index].text.length - 1))) })
+      .catch((e) => window.alert(`Couldn't reload the book: ${e.message}`))
+      .finally(() => { setEditing(false); setPaused(wasPaused.current) })
+  }
   
   // Camera + mic on while the book is open; transcripts are logged so you can see the mic working.
   useEffect(() => {
@@ -192,27 +293,13 @@ export default function Book({ id, cast, onBack }) {
     else setTurnWait(true)
   }, [index, pages]) // eslint-disable-line react-hooks/exhaustive-deps -- page and atEnd follow from index and pages
 
-  // Waiting for a page turn: match photos back to back from the moment the last line is done, until one shows another page.
-  // ponytail: one /turn request in flight at a time, nonstop while waiting; add a short gap if the server load matters
   useEffect(() => {
     const video = videoRef.current
     if (paused || !turnWait || !video?.videoWidth) return
-    let stopped = false
-    const check = () => snap(video, ({ blob, url }) => {
-      URL.revokeObjectURL(url)
-      const snapAt = performance.now()
-      const query = new URLSearchParams({ book: id, page: index, reading: reading.current })
-      request(`/turn?${query}`, { method: 'POST', body: blob })
-        .then(({ page: p, scores, times }) => {
-          console.log('[turn]', index, '->', p, scores, `(${Math.round(blob.size / 1024)} KB) |`,
-            timing({}, times, performance.now() - snapAt))
-          if (!stopped && p !== index) { setIndex(p); setLine(0) }
-        })
-        .catch((e) => console.log('[turn] failed:', e))
-        .finally(() => { if (!stopped) check() })
-    }, { maxWidth: 1400, quality: 0.8, zoom: 1 }) // full frame: unwarp finds the page wherever the book sits
-    check()
-    return () => { stopped = true }
+    const query = new URLSearchParams({ book: id, page: index, reading: reading.current })
+    const stopCheck = TURN_CHECKS[TURN_CHECK](video, query, index, (p) => { setIndex(p); setLine(0) })
+    const stopSheets = SAVE_SHEETS && TURN_CHECK !== 'decision' ? recordSheets(video, query, index) : () => {}
+    return () => { stopCheck(); stopSheets() }
   }, [paused, turnWait, index, id])
 
   // The follow-up question is read aloud when tapped
@@ -286,6 +373,9 @@ export default function Book({ id, cast, onBack }) {
               checked={showText} onChange={(e) => setShowText(e.target.checked)} />
             <label className="form-check-label" htmlFor="show-text">Show text</label>
           </div>
+          {showText && page && (
+            <button type="button" className="btn btn-sm btn-outline-light" onClick={openEdit}>Edit</button>
+          )}
           <button type="button" className={`reader-flag${page?.flagged ? ' on' : ''}`} disabled={!page}
             aria-pressed={!!page?.flagged} aria-label={page?.flagged ? 'Unflag this page' : 'Flag this page'}
             title={page?.flagged ? 'Flagged for fixing' : 'Flag this page for fixing'} onClick={toggleFlag}>{FlagIcon}</button>
@@ -348,6 +438,8 @@ export default function Book({ id, cast, onBack }) {
         <video ref={videoRef} autoPlay playsInline muted />
         {camStatus && <span>{camStatus}</span>}
       </div>
+
+      {editing && <div className="reader-edit"><BookEditor id={id} index={index} onBack={closeEdit} /></div>}
     </div>
   )
 }

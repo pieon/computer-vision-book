@@ -1,14 +1,15 @@
 """The library: list books, one book's JSON, edit a page's lines, delete a book."""
 import os
 import shutil
+import time
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, Field, StringConstraints
 
 from backend.config import IMG_DIR
-from backend.db import BOOK_ID, books, lock
+from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, page_key
 
 router = APIRouter()
@@ -25,6 +26,10 @@ class PageEdit(BaseModel):
 
 class Flag(BaseModel):
     flagged: bool
+
+
+class BookName(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
 
 class PageOrder(BaseModel):
@@ -72,7 +77,8 @@ def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = P
         if not pages or key not in pages:
             raise HTTPException(404, "no such page")
         pages[key]["text"] = [{"Reading": False, "Character": l.Character, "Dialogue": l.Dialogue} for l in edit.text]
-        book = book_json(doc["book"][0]["Book"]["Name"], pages, [])
+        book = book_json(doc["book"][0]["Book"]["Name"], pages,
+                          [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "updatedAt": datetime.now(timezone.utc)}})
     return book
 
@@ -90,6 +96,44 @@ def flag_page(flag: Flag, book_id: str = Path(pattern=BOOK_ID), key: str = Path(
     return {"flagged": flag.flagged}
 
 
+@router.put("/books/{book_id}/name")
+def rename_book(edit: BookName, book_id: str = Path(pattern=BOOK_ID)):
+    """Edit Book (PageList.jsx): tap the title to rename the book. Replies {"name": the stored name}."""
+    with lock:
+        r = books.update_one({"_id": book_id}, {"$set": {"book.0.Book.Name": edit.name,
+                                                         "updatedAt": datetime.now(timezone.utc)}})
+    if not r.matched_count:
+        raise HTTPException(404, "no such book")
+    return {"name": edit.name}
+
+
+@router.put("/books/{book_id}/face")
+async def set_face(request: Request, book_id: str = Path(pattern=BOOK_ID), name: str = Query(min_length=1)):
+    """Cast screen (Cropper.jsx): the body is a JPEG cropped from a page, the picture shown next to character `name`.
+    Saved as face_<ms>.jpg (a new name each time, so no stale cached crop); the old one is deleted. Replies {"img"}.
+    ponytail: a character dropped by a later edit leaves its face file on disk until the book is deleted."""
+    jpeg = await request.body()
+    if not jpeg.startswith(b"\xff\xd8") or len(jpeg) > 2_000_000:
+        raise HTTPException(400, "send a JPEG under 2 MB")
+    img = f"face_{int(time.time() * 1000)}.jpg"
+    with lock:
+        doc = books.find_one({"_id": book_id}, {"book": 1})
+        chars = doc["book"][0]["Book"]["Characters"] if doc else []
+        i = next((i for i, c in enumerate(chars) if c["Name"] == name), None)
+        if i is None:
+            raise HTTPException(404, "no such character")
+        folder = os.path.join(IMG_DIR, book_id)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, img), "wb") as f:
+            f.write(jpeg)
+        books.update_one({"_id": book_id}, {"$set": {f"book.0.Book.Characters.{i}.img": img,
+                                                     "updatedAt": datetime.now(timezone.utc)}})
+    old = os.path.join(folder, os.path.basename(chars[i].get("img") or ""))
+    if os.path.isfile(old):
+        os.remove(old)
+    return {"img": img}
+
+
 @router.put("/books/{book_id}/order")
 def reorder_pages(edit: PageOrder, book_id: str = Path(pattern=BOOK_ID)):
     """Pages list: put the pages in a new order, given as the current keys. Keys are reassigned by position
@@ -104,7 +148,8 @@ def reorder_pages(edit: PageOrder, book_id: str = Path(pattern=BOOK_ID)):
         keys = list(pages)
         texts = doc.get("texts", [])
         texts = [texts[keys.index(k)] if keys.index(k) < len(texts) else None for k in edit.order]
-        book = book_json(doc["book"][0]["Book"]["Name"], {page_key(j): pages[k] for j, k in enumerate(edit.order)}, [])
+        book = book_json(doc["book"][0]["Book"]["Name"], {page_key(j): pages[k] for j, k in enumerate(edit.order)},
+                          [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "texts": texts, "updatedAt": datetime.now(timezone.utc)}})
     return book
 
@@ -127,7 +172,8 @@ def delete_page(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"
         texts = doc.get("texts", [])
         if i < len(texts):
             del texts[i]
-        book = book_json(doc["book"][0]["Book"]["Name"], {page_key(j): p for j, p in enumerate(order)}, [])
+        book = book_json(doc["book"][0]["Book"]["Name"], {page_key(j): p for j, p in enumerate(order)},
+                          [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "texts": texts, "updatedAt": datetime.now(timezone.utc)}})
     # ponytail: os.path.basename keeps a stored img name inside the book's folder
     img = os.path.join(IMG_DIR, book_id, os.path.basename(gone["img"]))
@@ -139,6 +185,7 @@ def delete_page(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"
 @router.delete("/books/{book_id}", status_code=204)
 def delete_book(book_id: str = Path(pattern=BOOK_ID)):
     """Remove the book from MongoDB and its page images from disk. The id pattern keeps the path inside IMG_DIR."""
+    deleted.add(book_id)  # first, even if nothing is saved yet (404): pages still processing are dropped (scan.py)
     with lock:  # not in the middle of adding a page to it
         if books.delete_one({"_id": book_id}).deleted_count == 0:
             raise HTTPException(404, "no such book")

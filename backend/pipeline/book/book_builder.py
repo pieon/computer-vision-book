@@ -246,12 +246,14 @@ def page_key(i):
     return "Cover" if i == 0 else "Page" + number_word(i)
 
 
-def book_json(name, pages, names):
-    """Wrap built pages in the Book2 structure; Characters = Narrator + names that actually speak."""
+def book_json(name, pages, names, old=()):
+    """Wrap built pages in the Book2 structure; Characters = Narrator + names that actually speak.
+    old = the previous Characters, so a kept name keeps its face picture (img, set on the Cast screen)."""
+    imgs = {c["Name"]: c.get("img", "") for c in old}
     used = [s["Character"] for p in pages.values() for s in p["text"]]
     characters = ["Narrator"] + [n for n in dict.fromkeys(names + used) if n in used and n != "Narrator"]
     return [{"Book": {"Name": name,
-                      "Characters": [{"Name": n, "img": ""} for n in characters],
+                      "Characters": [{"Name": n, "img": imgs.get(n, "")} for n in characters],
                       "Pages": pages}}]
 
 

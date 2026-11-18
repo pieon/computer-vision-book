@@ -6,10 +6,13 @@
 import { useSyncExternalStore } from 'react'
 import { request } from './api.js'
 
-// ponytail: 4 at once per book so ARC isn't flooded; raise it if ARC copes
+// At most this many uploads at once across all books: the browser opens only 6 connections to the server (HTTP/1.1
+// through the Vite proxy), so 2 stay free for /books, /images and /stats. Also keeps ARC from being flooded.
 export const MAX_IN_FLIGHT = 4
 
-const books = new Map() // bookId -> { total, done, failed, waiting: [start fns], running: Set<Promise>, cancelled }
+const books = new Map() // bookId -> { total, done, failed, cancelled, uploads: Set<AbortController> }
+let waiting = [] // { bookId, start }, sent in order; covers go first so a new book's Library tile fills in quickly
+let running = 0
 const listeners = new Set()
 let version = 0
 function changed() {
@@ -33,45 +36,53 @@ export function progress(bookId) {
 export const scanning = () => [...books].filter(([, b]) => b.done + b.failed < b.total).map(([id]) => id)
 
 // Start waiting photos while there's room.
-function pump(b) {
-  while (!b.cancelled && b.waiting.length && b.running.size < MAX_IN_FLIGHT) {
-    const run = b.waiting.shift()()
-    b.running.add(run)
-    run.finally(() => { b.running.delete(run); pump(b) })
+function pump() {
+  while (waiting.length && running < MAX_IN_FLIGHT) {
+    running++
+    waiting.shift().start().finally(() => { running--; pump() })
   }
 }
 
 // Send photo `n` of this book now (or as soon as one of the MAX_IN_FLIGHT slots frees up).
-// onResult(reply, error, sentAt) runs when it's done; sentAt = when its upload started.
+// onResult(reply, error, sentAt) runs when it's done (not if the book was cancelled); sentAt = when its upload started.
 export function enqueue(bookId, n, blob, onResult) {
   let b = books.get(bookId)
-  if (!b) books.set(bookId, (b = { total: 0, done: 0, failed: 0, waiting: [], running: new Set(), cancelled: false }))
+  if (!b) books.set(bookId, (b = { total: 0, done: 0, failed: 0, cancelled: false, uploads: new Set() }))
   b.total++
   changed()
-  const send = () => request(`/scan?book=${bookId}&n=${n}`, { method: 'POST', body: blob })
-  b.waiting.push(async () => {
+  const start = async () => {
     const sentAt = performance.now()
+    const upload = new AbortController()
+    b.uploads.add(upload)
+    const send = () => request(`/scan?book=${bookId}&n=${n}`, { method: 'POST', body: blob, signal: upload.signal })
     try {
-      const reply = await send().catch(() => send())
+      const reply = await send().catch((e) => { if (b.cancelled) throw e; return send() })
+      if (b.cancelled) return
       b.done++
       onResult?.(reply, null, sentAt)
     } catch (e) {
+      if (b.cancelled) return
       b.failed++
       onResult?.(null, e, sentAt)
+    } finally {
+      b.uploads.delete(upload)
     }
     changed()
-  })
-  pump(b)
+  }
+  const job = { bookId, start }
+  if (n === 0) waiting.unshift(job)
+  else waiting.push(job)
+  pump()
 }
 
-// Stop a book's uploads: photos not sent yet are dropped, and this waits for the ones in flight, so deleting the book
-// afterwards can't be undone by a late upload re-creating it.
-export async function cancel(bookId) {
+// Stop a book's uploads right away: photos not sent yet are dropped and the ones in flight are aborted. The server may
+// still finish a page it already started; DELETE /books/<id> makes it drop that page (backend/routes/scan.py).
+export function cancel(bookId) {
   const b = books.get(bookId)
   if (!b) return
   b.cancelled = true
-  b.waiting = []
-  while (b.running.size) await Promise.allSettled([...b.running])
+  waiting = waiting.filter((job) => job.bookId !== bookId)
+  b.uploads.forEach((u) => u.abort())
   books.delete(bookId)
   changed()
 }
