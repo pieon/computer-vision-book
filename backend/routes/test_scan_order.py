@@ -33,6 +33,16 @@ def test_gap_while_processing():
         books.delete_one({"_id": BOOK})
 
 
+def test_title_is_whole_cover():
+    """A title printed over several lines (OCR keeps the line breaks) becomes the whole book name, not its first word."""
+    books.delete_one({"_id": BOOK})
+    try:
+        commit_page(BOOK, 0, "page_001.png", "The\nVery Hungry\nCaterpillar", {})
+        assert books.find_one({"_id": BOOK})["book"][0]["Book"]["Name"] == "The Very Hungry Caterpillar"
+    finally:
+        books.delete_one({"_id": BOOK})
+
+
 def test_deleted_book_not_recreated():
     """A page that finishes after its book was deleted (Cancel in the Scanner) must not bring the book back."""
     books.delete_one({"_id": BOOK})
@@ -48,5 +58,6 @@ def test_deleted_book_not_recreated():
 if __name__ == "__main__":
     test_out_of_order()
     test_gap_while_processing()
+    test_title_is_whole_cover()
     test_deleted_book_not_recreated()
     print("ok")

@@ -21,18 +21,45 @@ export function startCamera(video, constraints, onReady, onError) {
   return stop
 }
 
-// Center crop of the video frame, as drawImage source args. zoom 1.5 = the middle 2/3; zoom 1 = the whole frame.
-export function crop(video, zoom = 1.5) {
-  const sw = video.videoWidth / zoom
-  const sh = video.videoHeight / zoom
-  return [(video.videoWidth - sw) / 2, (video.videoHeight - sh) / 2, sw, sh]
+// The part of a video frame or <img> inside `band`, as drawImage source args: full width, the rows from band.top to
+// band.bottom (fractions of the height; the setup lines, BandLine.jsx). The default band is the whole frame.
+export const FULL = { top: 0, bottom: 1 }
+export function crop(source, band = FULL) {
+  const width = source.videoWidth ?? source.naturalWidth
+  const height = source.videoHeight ?? source.naturalHeight
+  const y = Math.round(band.top * height) // whole pixel rows
+  return [0, y, width, Math.round(band.bottom * height) - y]
 }
 
-// Full camera resolution (cropped), not the on-screen size, mirrored (the backend unwarps with flip=False).
-// maxWidth/quality shrink it, e.g. for the reader's page-turn check, which the server resizes to 800px anyway.
-// zoom: see crop(). Hands back { blob, url }.
-export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, zoom = 1.5 } = {}) {
-  const [sx, sy, sw, sh] = crop(video, zoom)
+// An already-taken photo (an <img> of a snap(): mirrored already, so not again), turned `angle` degrees clockwise
+// about its centre, then cut to `band`, as a JPEG blob for onBlob. Same size frame when turned: corners turned out of
+// it are cut off, uncovered ones are black, as on screen (CSS rotate in a black, overflow-hidden box). At angle 0 it's
+// what snap(video, ..., { band }) would have sent.
+export function cropImage(img, band, onBlob, { angle = 0, quality = 0.92 } = {}) {
+  const w = img.naturalWidth
+  const h = img.naturalHeight
+  const turned = document.createElement('canvas')
+  turned.width = w
+  turned.height = h
+  const t = turned.getContext('2d')
+  t.fillStyle = '#000'
+  t.fillRect(0, 0, w, h)
+  t.translate(w / 2, h / 2)
+  t.rotate((angle * Math.PI) / 180)
+  t.drawImage(img, -w / 2, -h / 2)
+  const [sx, sy, sw, sh] = crop({ naturalWidth: w, naturalHeight: h }, band)
+  const canvas = document.createElement('canvas')
+  canvas.width = sw
+  canvas.height = sh
+  canvas.getContext('2d').drawImage(turned, sx, sy, sw, sh, 0, 0, sw, sh)
+  canvas.toBlob((blob) => blob && onBlob(blob), 'image/jpeg', quality)
+}
+
+// Full camera resolution (cropped to `band`, see crop()), not the on-screen size, mirrored (the backend unwarps with
+// flip=False). maxWidth/quality shrink it, e.g. for the reader's page-turn check, which the server resizes to 800px
+// anyway. Hands back { blob, url }.
+export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, band = FULL } = {}) {
+  const [sx, sy, sw, sh] = crop(video, band)
   const scale = Math.min(1, maxWidth / sw)
   const w = Math.round(sw * scale)
   const h = Math.round(sh * scale)
@@ -44,6 +71,23 @@ export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, zoom
   ctx.scale(-1, 1)
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h)
   canvas.toBlob((blob) => blob && onPhoto({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', quality)
+}
+
+// Full frame, mirrored like snap(), drawn at (x, y) in a w x h box.
+function drawMirrored(ctx, video, x, y, w, h) {
+  ctx.save()
+  ctx.translate(x + w, y)
+  ctx.scale(-1, 1)
+  ctx.drawImage(video, ...crop(video), 0, 0, w, h)
+  ctx.restore()
+}
+
+// Frame number n in the tile's top-left corner, so the model (and you) can read the time order.
+function numberTile(ctx, x, y, n) {
+  ctx.fillStyle = '#000'
+  ctx.fillRect(x, y, 32, 26)
+  ctx.fillStyle = '#fff'
+  ctx.fillText(String(n), x + 5, y + 20)
 }
 
 // Zoetrope-style sheet for the decision model's page-turn check: `frames` full-frame shots `gapMs` apart, mirrored like
@@ -61,15 +105,8 @@ export function frameSheet(video, onSheet, { frames = 10, gapMs = 150, cols = 5,
   const timer = setInterval(() => {
     const x = (i % cols) * w
     const y = Math.floor(i / cols) * h
-    ctx.save()
-    ctx.translate(x + w, y)
-    ctx.scale(-1, 1)
-    ctx.drawImage(video, ...crop(video, 1), 0, 0, w, h)
-    ctx.restore()
-    ctx.fillStyle = '#000'
-    ctx.fillRect(x, y, 32, 26)
-    ctx.fillStyle = '#fff'
-    ctx.fillText(String(i + 1), x + 5, y + 20)
+    drawMirrored(ctx, video, x, y, w, h)
+    numberTile(ctx, x, y, i + 1)
     if (++i < frames) return
     clearInterval(timer)
     const ms = performance.now() - startAt
@@ -78,17 +115,73 @@ export function frameSheet(video, onSheet, { frames = 10, gapMs = 150, cols = 5,
   return () => clearInterval(timer)
 }
 
-// Motion score every 100 ms: % of pixels (160px-wide crop, green channel) that changed by more than 25 since the last
-// frame, over the same crop(video, zoom) a snap would take. onScore(score) gets it; returns a stop function.
-export function watchMotion(video, onScore, zoom = 1.5) {
+// Which buffered frames make a sheet around time `at`: indices of the last `before` frames taken at or before `at`
+// and the first `after` frames taken after it (`times` oldest first). Fewer before-frames if the buffer doesn't reach
+// back that far; null until `after` frames after `at` exist.
+export function pickFrames(times, at, before, after) {
+  const first = times.findIndex((t) => t > at) // first frame after `at`
+  if (first < 0 || times.length - first < after) return null
+  const from = Math.max(0, first - before)
+  return Array.from({ length: first + after - from }, (_, k) => from + k)
+}
+
+// Rolling buffer for zoetrope sheets: a full, mirrored frame every `gapMs`, the last `keep` of them kept (20 x 150 ms
+// = 3 s). sheet(at, before, after, onSheet) asks for a sheet around time `at` (performance.now()): once `after`
+// frames after it exist, the frames around it are drawn into the same numbered 5-wide grid as frameSheet and
+// onSheet({ blob }) gets the JPEG. stop(): no new sheets; capturing ends once the asked-for ones are done, so a flip
+// that just turned the page is still saved.
+export function frameBuffer(video, { keep = 20, gapMs = 150, cols = 5, w = 320 } = {}) {
+  const h = Math.round((w * video.videoHeight) / video.videoWidth)
+  const frames = [] // { t, canvas }, oldest first; canvases are reused once the buffer is full
+  let pending = [] // { at, before, after, onSheet }
+  let stopped = false
+
+  function compose(tiles, onSheet) {
+    const canvas = document.createElement('canvas')
+    canvas.width = cols * w
+    canvas.height = Math.ceil(tiles.length / cols) * h
+    const ctx = canvas.getContext('2d')
+    ctx.font = 'bold 20px sans-serif'
+    tiles.forEach((tile, i) => {
+      const x = (i % cols) * w
+      const y = Math.floor(i / cols) * h
+      ctx.drawImage(tile, x, y) // already mirrored
+      numberTile(ctx, x, y, i + 1)
+    })
+    canvas.toBlob((blob) => blob && onSheet({ blob }), 'image/jpeg', 0.8)
+  }
+
+  const timer = setInterval(() => {
+    if (stopped && !pending.length) return clearInterval(timer)
+    const canvas = frames.length >= keep ? frames.shift().canvas : Object.assign(document.createElement('canvas'), { width: w, height: h })
+    drawMirrored(canvas.getContext('2d'), video, 0, 0, w, h)
+    frames.push({ t: performance.now(), canvas })
+    const times = frames.map((f) => f.t)
+    pending = pending.filter((p) => {
+      const picked = pickFrames(times, p.at, p.before, p.after)
+      if (picked) compose(picked.map((i) => frames[i].canvas), p.onSheet) // drawn now, before the canvases are reused
+      return !picked
+    })
+  }, gapMs)
+
+  return {
+    sheet(at, before, after, onSheet) { if (!stopped) pending.push({ at, before, after, onSheet }) },
+    stop() { stopped = true },
+  }
+}
+
+// Motion score every 100 ms: % of pixels (160px-wide, green channel) that changed by more than 25 since the last
+// frame, over the same crop(video, band) a snap would take, so movement outside the book doesn't count.
+// onScore(score) gets it; returns a stop function.
+export function watchMotion(video, onScore, band = FULL) {
   const SMALL_W = 160
   const canvas = document.createElement('canvas')
   canvas.width = SMALL_W
-  canvas.height = Math.round((SMALL_W * video.videoHeight) / video.videoWidth)
+  canvas.height = Math.max(1, Math.round((SMALL_W * video.videoHeight * (band.bottom - band.top)) / video.videoWidth))
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   let prev = null
   const id = setInterval(() => {
-    ctx.drawImage(video, ...crop(video, zoom), 0, 0, canvas.width, canvas.height)
+    ctx.drawImage(video, ...crop(video, band), 0, 0, canvas.width, canvas.height)
     const cur = ctx.getImageData(0, 0, canvas.width, canvas.height).data
     if (prev) {
       let changed = 0

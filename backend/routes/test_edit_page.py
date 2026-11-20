@@ -8,8 +8,8 @@ import os
 import backend.clients.arc as arc
 from backend.config import IMG_DIR
 from backend.db import books
-from backend.routes.books import (BookName, Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books,
-                                  rename_book, reorder_pages, set_face)
+from backend.routes.books import (Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books,
+                                  reorder_pages, set_face)
 from backend.routes.scan import commit_page, image_name
 
 BOOK = "zz-test-edit"  # throwaway id, deleted at the end
@@ -77,21 +77,14 @@ try:
         raise AssertionError("expected a validation error")
     except ValidationError:
         pass
-    # rename: trimmed, shown in the Library, kept through a line edit; a blank name or unknown book is refused
-    assert rename_book(BookName(name="  My Book  "), BOOK) == {"name": "My Book"}
-    assert row()["name"] == "My Book", row()
+    # the title only changes by editing the cover's lines; other pages' edits leave it
+    cover = books.find_one({"_id": BOOK})["book"][0]["Book"]["Pages"]["Cover"]["text"]
+    edit_page(PageEdit(text=[{"Character": "Narrator", "Dialogue": "The Very Hungry"},
+                             {"Character": "Narrator", "Dialogue": "Caterpillar"}]), BOOK, "Cover")
+    assert row()["name"] == "The Very Hungry Caterpillar", row()
     edit_page(PageEdit(text=[{"Character": "Zoe", "Dialogue": '"Who is there?"'}]), BOOK, "PageOne")
-    assert row()["name"] == "My Book"
-    try:
-        BookName(name="   ")
-        raise AssertionError("expected a validation error")
-    except ValidationError:
-        pass
-    try:
-        rename_book(BookName(name="x"), "zz-no-such-book")
-        raise AssertionError("expected 404")
-    except HTTPException as e:
-        assert e.status_code == 404
+    assert row()["name"] == "The Very Hungry Caterpillar"
+    edit_page(PageEdit(text=[{"Character": l["Character"], "Dialogue": l["Dialogue"]} for l in cover]), BOOK, "Cover")
     # flags: shown per page in the Library row, kept through line edits, cleared by unflagging
     assert row()["flagged"] == []
     flag_page(Flag(flagged=True), BOOK, "PageOne")
@@ -136,7 +129,13 @@ try:
     assert image_name(BOOK, 1) == "page_002.png"  # free
     assert image_name(BOOK, 0) == "page_001_1.png"  # page_001.png is PageOne's now
 
+    cover_img = books.find_one({"_id": BOOK})["book"][0]["Book"]["Pages"]["Cover"]["img"]
+    version = os.path.join(IMG_DIR, BOOK, "alt",
+                           os.path.splitext(os.path.basename(cover_img))[0] + "_20261120-120000-000000.png")
+    os.makedirs(os.path.dirname(version), exist_ok=True)
+    open(version, "wb").close()  # a fingerprint version from a reading (scan.add_version)
     delete_page(BOOK, "Cover")
+    assert not os.path.exists(version)  # deleted with its page
     try:
         delete_page(BOOK, "Cover")
         raise AssertionError("expected 400")

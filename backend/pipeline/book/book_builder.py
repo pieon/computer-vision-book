@@ -246,6 +246,11 @@ def page_key(i):
     return "Cover" if i == 0 else "Page" + number_word(i)
 
 
+def cover_title(page):
+    """Book name from the cover page's lines (as built or edited), joined; "" if it has none."""
+    return " ".join(l["Dialogue"] for l in page["text"]).strip()[:80]
+
+
 def book_json(name, pages, names, old=()):
     """Wrap built pages in the Book2 structure; Characters = Narrator + names that actually speak.
     old = the previous Characters, so a kept name keeps its face picture (img, set on the Cast screen)."""

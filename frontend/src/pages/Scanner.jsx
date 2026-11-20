@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { remove, timing } from '../api.js'
+import { BAND, BandLine } from '../BandLine.jsx'
 import { snap, startCamera, watchMotion } from '../camera.js'
 import { cancel as cancelUploads, enqueue, progress, useScanQueue } from '../scanQueue.js'
 
-const ZOOMS = [1, 1.5, 2] // the zoom button steps through these: whole frame, then closer crops of its middle
+const SETTLE_MS = 2000 // the page must be still (motion < 8%) this long before the photo; was 1000, too quick
 const STEPS = [ // what to do next, by how many photos are taken
   'Scan the front cover of the book.',
   'Open to the first page where the story begins.',
@@ -11,6 +12,8 @@ const STEPS = [ // what to do next, by how many photos are taken
 ]
 
 // start: the first page position to fill. 0 = a new book (cover first); > 0 = adding pages to the end of a book.
+// First the setup: the user drags two lines to the top and bottom of the book and confirms; then every photo is cut to
+// that band before it's sent, so the table and lap never reach the unwarp, OCR or the page fingerprints.
 export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const videoRef = useRef(null)
   const needTurn = useRef(false) // a page was taken: wait for the next turn before the next photo
@@ -20,7 +23,8 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const [toast, setToast] = useState('')
   const [taken, setTaken] = useState([]) // labels of the photos taken, in order
   const [ratio, setRatio] = useState(4 / 3)
-  const [zoom, setZoom] = useState(1.5) // one of ZOOMS
+  const [phase, setPhase] = useState('setup') // 'setup': placing the band lines; 'scan': taking photos
+  const [band, setBand] = useState(BAND) // { top, bottom } of the book, fractions of the frame height
   useScanQueue() // re-render as pages finish processing
   const { done = 0, failed = 0, total = 0 } = progress(bookId) ?? {}
 
@@ -75,9 +79,10 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     onCancel()
   }
 
-  // Auto-capture: wait for motion (page turn), then snap once it has been still for 1 s.
+  // Auto-capture: wait for motion (page turn) inside the band, then snap once it has been still for SETTLE_MS.
+  // Only while scanning; the band can't change then.
   useEffect(() => {
-    if (!ready) return
+    if (!ready || phase !== 'scan') return
     const video = videoRef.current
     let moving = !needTurn.current
     let movedAt = moving ? performance.now() : null // first motion, for the [scan] stage times
@@ -91,21 +96,25 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
       if (score >= 8) stillSince = null
       else if (moving) {
         stillSince ??= performance.now()
-        if (performance.now() - stillSince >= 1000) {
+        if (performance.now() - stillSince >= SETTLE_MS) {
           moving = false
           needTurn.current = true
           const snapAt = performance.now()
           // flip: first motion -> settling began; settle: the still wait; snap: photo encode
           const t = { flip: stillSince - movedAt, settle: snapAt - stillSince }
           movedAt = null
-          snap(video, (p) => add(p, { ...t, snap: performance.now() - snapAt }), { zoom })
+          snap(video, (p) => add(p, { ...t, snap: performance.now() - snapAt }), { band })
         }
       }
-    }, zoom)
-  }, [ready, zoom]) // eslint-disable-line react-hooks/exhaustive-deps -- add only uses refs, setters and bookId
+    }, band)
+  }, [ready, phase]) // eslint-disable-line react-hooks/exhaustive-deps -- band is fixed while scanning; add only uses refs, setters and bookId
 
   const processing = total - done - failed
   const last = taken.at(-1)
+  const setup = phase === 'setup'
+  const guide = setup
+    ? 'Drag the lines to the top and bottom of the book, then tap Confirm.'
+    : `${last ? `✓ ${last} taken. ` : ''}${start && !taken.length ? 'Open to the page you want to add.' : STEPS[Math.min(start + taken.length, STEPS.length - 1)]}`
 
   return (
     <main className="scan" style={{ '--ratio': ratio }}>
@@ -115,26 +124,32 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
           <strong>{done}</strong> saved{processing ? ` · ${processing} processing` : ''}{failed ? ` · ${failed} failed` : ''}
         </p>
       </header>
-      <p className="scan-status">{status}{ready && ` · motion ${motion.toFixed(1)}%`}</p>
+      <p className="scan-status">{status}{ready && !setup && ` · motion ${motion.toFixed(1)}%`}</p>
 
       <div className="scan-stage">
         <div className="scan-view">
-          <video ref={videoRef} autoPlay playsInline muted style={{ transform: `scale(-${zoom}, ${zoom})` }} /* mirrored and zoomed, same as snap() */ />
+          <video ref={videoRef} autoPlay playsInline muted /* mirrored in CSS, same as snap() */ />
+          {ready && <>
+            {/* outside the band is darker: that part of the frame is cut off every photo */}
+            <div className="scan-shade" style={{ top: 0, height: `${band.top * 100}%` }} />
+            <div className="scan-shade" style={{ top: `${band.bottom * 100}%`, bottom: 0 }} />
+            <BandLine which="top" band={band} setBand={setBand} fixed={!setup} />
+            <BandLine which="bottom" band={band} setBand={setBand} fixed={!setup} />
+          </>}
           {taken.length > 0 && <div className="scan-flash" key={`flash${taken.length}`} />}
-          <section className="scan-guide" aria-live="polite" key={taken.length} /* re-keyed so each message fades in */>
-            <p className="scan-guide-text">{last ? `✓ ${last} taken. ` : ''}{start && !taken.length ? 'Open to the page you want to add.' : STEPS[Math.min(start + taken.length, STEPS.length - 1)]}</p>
+          <section className="scan-guide" aria-live="polite" key={`${phase}${taken.length}`} /* re-keyed so each message fades in */>
+            <p className="scan-guide-text">{guide}</p>
           </section>
         </div>
       </div>
 
       <div className="scan-controls">
         <button type="button" className="scan-cancel" onClick={cancel}>Cancel</button>
-        <div className="scan-center" /* photos are taken automatically once the page is still */>
-          <button type="button" className="scan-zoom" aria-pressed={zoom !== 1} aria-label={`Zoom ${zoom}×, tap to change`}
-            onClick={() => setZoom(ZOOMS[(ZOOMS.indexOf(zoom) + 1) % ZOOMS.length])}>x{zoom}</button>
-        </div>
-        {/* pages still processing carry on in the background; the Library shows how many are ready */}
-        <button type="button" className="scan-done" disabled={taken.length < (start ? 1 : 2)} onClick={onDone}>Done</button>
+        <div /* photos are taken automatically once the page is still */ />
+        {setup
+          ? <button type="button" className="scan-done" disabled={!ready} onClick={() => setPhase('scan')}>Confirm</button>
+          /* pages still processing carry on in the background; the Library shows how many are ready */
+          : <button type="button" className="scan-done" disabled={taken.length < (start ? 1 : 2)} onClick={onDone}>Done</button>}
       </div>
 
       {toast && <div className="scan-toast" role="status">{toast}</div>}

@@ -101,10 +101,6 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .scan .scan-head h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2rem; }
 .scan .scan-count { margin: 0; color: var(--scan-muted); }
-.scan .scan-center { display: flex; align-items: center; gap: 14px; }
-.scan .scan-zoom { width: 44px; height: 44px;
-  border-radius: 50%; border: 1px solid #ffffff2e; background: #ffffff14; color: #eee; font-size: 0.85rem; font-weight: 700; }
-.scan .scan-zoom[aria-pressed="true"] { background: var(--scan-accent); border-color: transparent; color: #140f1f; }
 .scan .scan-count strong { color: #eee; }
 .scan .scan-status { margin: -6px 0 0; color: var(--scan-muted); font-size: 0.8rem; }
 .scan .scan-guide { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1; padding: 12px 16px; border-radius: 16px;
@@ -116,11 +112,24 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-view { position: relative; overflow: hidden; border-radius: 20px; background: #000; border: 1px solid var(--scan-line);
   width: min(100cqw, calc(100cqh * var(--ratio))); height: min(100cqh, calc(100cqw / var(--ratio))); }
 .scan .scan-view video, .scan .scan-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan .scan-view video { transform: scaleX(-1); } /* mirrored, same as snap() */
+/* setup band: outside it is darker (cut off every photo); the lines are drag handles with a tall touch area */
+.scan-shade { position: absolute; left: 0; right: 0; background: #000a; pointer-events: none; }
+.scan-line { position: absolute; left: 0; right: 0; z-index: 2; height: 32px; margin-top: -16px; cursor: ns-resize;
+  touch-action: none; }
+.scan-line::before { content: ""; position: absolute; left: 0; right: 0; top: 15px; height: 3px; background: var(--scan-accent, #9d73e0);
+  box-shadow: 0 0 6px #0008; }
+.scan-line::after { content: ""; position: absolute; left: 50%; top: 8px; width: 44px; height: 16px; margin-left: -22px;
+  border-radius: 999px; background: var(--scan-accent, #9d73e0); box-shadow: 0 1px 6px #0008; }
+.scan-line:focus-visible { outline: 2px solid #fff; outline-offset: -8px; }
+.scan-line.fixed { cursor: default; pointer-events: none; }
+.scan-line.fixed::before { height: 1px; top: 16px; background: #ffffff80; }
+.scan-line.fixed::after { display: none; }
 .scan .scan-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: flash 0.5s ease-out forwards; }
 .scan .scan-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 84px; padding: 8px 12px;
   border-radius: 999px; background: rgba(38, 38, 38, 0.9); border: 1px solid #ffffff14; box-shadow: 0 8px 30px #000a; }
 .scan .scan-cancel { justify-self: start; padding: 10px 16px; border-radius: 999px; color: var(--scan-danger); font-weight: 600; }
-.scan .scan-done { justify-self: end; padding: 10px 22px; border-radius: 999px; background: var(--scan-accent); color: #140f1f; font-weight: 700; }
+.scan .scan-done { justify-self: end; padding: 10px 22px; border-radius: 999px; background: var(--scan-accent, #9d73e0); color: #140f1f; font-weight: 700; }
 .scan .scan-toast { position: fixed; left: 50%; bottom: 120px; z-index: 10; transform: translateX(-50%); padding: 10px 20px;
   border-radius: 999px; background: rgba(64, 64, 64, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }
@@ -255,6 +264,37 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader .reader-tts::-moz-progress-bar { background: #5b9bff; }
 
 /* Edit Book (PageList.jsx): the title is a button that turns into a text box */
-.pages-title { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left;
-  text-decoration: underline dotted #ffffff60; text-underline-offset: 6px; }
-.pages-title-input { font-size: 1.25rem; font-weight: 500; max-width: 100%; }
+
+/* Book.jsx: after a decision-model turn, "which page are you on?" (PageCarousel); before leaving, marking the book in
+   each of those photos (CropPhotos). Over the reader like the Edit panel. */
+.page-pick, .crop-photos { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; gap: 12px; padding: 16px; background: var(--bs-body-bg, #212529); text-align: center; }
+.page-pick-row { display: flex; gap: 16px; width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; padding: 8px 30%; }
+.page-pick-item { flex: 0 0 min(40vw, 280px); scroll-snap-align: center; padding: 8px; border-radius: 12px;
+  border: 2px solid transparent; background: #1c1c1c; color: inherit; }
+.page-pick-item.guess { border-color: #5b9bff; }
+.page-pick-item img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: 6px; }
+.page-pick-item span { display: block; margin-top: 6px; font-weight: 600; }
+/* the view is exactly the photo's size, so the band lines' fractions are fractions of the photo */
+.crop-photos-view { position: relative; overflow: hidden; border-radius: 12px; background: #000; } /* black: corners uncovered by the turn */
+.crop-photos-turn { width: min(100%, 420px); }
+.crop-photos-view img { display: block; max-width: 100%; max-height: 70dvh; }
+.crop-photos-buttons { display: flex; gap: 12px; }
+
+/* Book.jsx: the voice agents picked in Cast, lined up in the middle of the reader; the one reading the current line
+   grows. While waiting for a turn and ORB can't see the book, one bubble over them asks to see it and they look up. */
+.reader .reader-stage { gap: 20px; }
+.reader-cast-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 12px; }
+.reader-cast { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 20px; padding-top: 20px; }
+.reader-cast-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  transform-origin: 50% 100%; transition: transform .3s ease; }
+.reader-cast-item.speaking { z-index: 1; transform: scale(1.5); }
+.reader-cast-item.speaking .cast-orb { box-shadow: 0 0 30px 8px color-mix(in srgb, var(--c) 75%, transparent), inset 0 -6px 14px #0004; }
+.reader-cast-name { max-width: 110px; font-size: .75rem; color: #ffffffb0; line-height: 1.2; overflow-wrap: break-word; }
+.reader-cast-item.speaking .reader-cast-name { font-size: .55rem; color: #fff; } /* stays about the same size once scaled */
+.reader-cast.looking .cast-orb::before, .reader-cast.looking .cast-orb::after { top: 30%; } /* looking up at the bubble */
+.reader-cast-bubble { position: relative; margin: 0; padding: 10px 18px; border-radius: 18px; background: #fff; color: #1d1f23;
+  font-weight: 700; font-size: 1.1rem; animation: guide-in .3s ease-out; }
+.reader-cast-bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; margin-left: -9px;
+  border: 9px solid transparent; border-bottom: 0; border-top-color: #fff; }
+@media (prefers-reduced-motion: reduce) { .reader-cast-item { transition: none; } .reader-cast-bubble { animation: none; } }

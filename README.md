@@ -8,7 +8,7 @@ backend/                FastAPI server: python -m backend
   app.py                creates the app and registers each route module
   config.py             repo paths and .env loading
   db.py                 MongoDB collections + the processing lock
-  routes/               one file per feature: scan.py, books.py, stats.py
+  routes/               one file per feature: scan.py, turn.py, books.py, stats.py
   clients/              outside APIs, one module per provider: arc.py (VT ARC LLM: chat(), decide())
   pipeline/             processing, no HTTP or DB: unwarp/ (UVDoc), ocr.py, book/ (lines + speakers -> JSON)
 frontend/               React + Vite PWA: npm run dev

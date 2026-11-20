@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from backend.config import IMG_DIR
 from backend.db import BOOK_ID, books, deleted, lock
-from backend.pipeline.book.book_builder import book_json, page_key
+from backend.pipeline.book.book_builder import book_json, cover_title, page_key
+from backend.routes.scan import version_paths
 
 router = APIRouter()
 
@@ -26,10 +27,6 @@ class PageEdit(BaseModel):
 
 class Flag(BaseModel):
     flagged: bool
-
-
-class BookName(BaseModel):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
 
 class PageOrder(BaseModel):
@@ -77,8 +74,10 @@ def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = P
         if not pages or key not in pages:
             raise HTTPException(404, "no such page")
         pages[key]["text"] = [{"Reading": False, "Character": l.Character, "Dialogue": l.Dialogue} for l in edit.text]
-        book = book_json(doc["book"][0]["Book"]["Name"], pages,
-                          [], doc["book"][0]["Book"]["Characters"])
+        name = doc["book"][0]["Book"]["Name"]
+        if key == "Cover":  # the title follows the cover's lines; this is the only way to change it
+            name = cover_title(pages[key]) or name
+        book = book_json(name, pages, [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "updatedAt": datetime.now(timezone.utc)}})
     return book
 
@@ -94,17 +93,6 @@ def flag_page(flag: Flag, book_id: str = Path(pattern=BOOK_ID), key: str = Path(
     if not r.matched_count:
         raise HTTPException(404, "no such page")
     return {"flagged": flag.flagged}
-
-
-@router.put("/books/{book_id}/name")
-def rename_book(edit: BookName, book_id: str = Path(pattern=BOOK_ID)):
-    """Edit Book (PageList.jsx): tap the title to rename the book. Replies {"name": the stored name}."""
-    with lock:
-        r = books.update_one({"_id": book_id}, {"$set": {"book.0.Book.Name": edit.name,
-                                                         "updatedAt": datetime.now(timezone.utc)}})
-    if not r.matched_count:
-        raise HTTPException(404, "no such book")
-    return {"name": edit.name}
 
 
 @router.put("/books/{book_id}/face")
@@ -176,9 +164,9 @@ def delete_page(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"
                           [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "texts": texts, "updatedAt": datetime.now(timezone.utc)}})
     # ponytail: os.path.basename keeps a stored img name inside the book's folder
-    img = os.path.join(IMG_DIR, book_id, os.path.basename(gone["img"]))
-    if os.path.isfile(img):
-        os.remove(img)
+    for img in (os.path.join(IMG_DIR, book_id, os.path.basename(gone["img"])), *version_paths(book_id, gone["img"])):
+        if os.path.isfile(img):
+            os.remove(img)
     return book
 
 

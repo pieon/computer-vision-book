@@ -7,6 +7,7 @@ import Book from './Book.jsx'
 import BookEditor from './BookEditor.jsx'
 import Cast from './Cast.jsx'
 import PageList from './PageList.jsx'
+import CropPhotos from './CropPhotos.jsx'
 import Scanner from './Scanner.jsx'
 
 function BookJson({ id, onBack }) {
@@ -63,6 +64,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
   const [openId, setOpenId] = useState(null) 
   const [readId, setReadId] = useState(null)
   const [cast, setCast] = useState(null) // who reads each character, picked in Cast before reading readId
+  const [marking, setMarking] = useState(null) // { id, shots }: the reader closed with photos to mark (CropPhotos)
   const [pagesOf, setPagesOf] = useState(null) // book id open in Edit Book (its Pages list)
   const [editing, setEditing] = useState(null) // page index open in the line editor, from the Pages list
   const [adding, setAdding] = useState(null) // { id, start }: scanning more pages onto that book, from Pages
@@ -101,7 +103,14 @@ export default function Library({ onHome, onLibrary, onScan }) {
   // the library stays mounted underneath, so Back doesn't reload the list
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
   if (readId && !cast) return <Cast id={readId} onStart={setCast} onBack={() => setReadId(null)} />
-  if (readId) return <Book id={readId} cast={cast} onBack={() => { setReadId(null); setCast(null) }} />
+  if (marking) return <CropPhotos id={marking.id} shots={marking.shots} onDone={() => setMarking(null)} />
+  if (readId) {
+    return <Book id={readId} cast={cast} onBack={(shots) => {
+      if (shots?.length) setMarking({ id: readId, shots })
+      setReadId(null)
+      setCast(null)
+    }} />
+  }
   if (adding) { // back to Pages either way; added pages keep processing there
     return <Scanner bookId={adding.id} start={adding.start} onDone={() => setAdding(null)} onCancel={() => setAdding(null)} />
   }
