@@ -469,7 +469,8 @@ export default function Book({ id, cast, onBack }) {
   }, [paused, turnWait, index, id])
 
   // Sound effects (sounds.js; picked per page at scan time), in the modes switched on in the Sounds menu:
-  // - setting: the page's background loop, quieter while the child reads; off while paused or picking the page
+  // - setting: the page's background loop, quieter while the child reads; off while paused, picking the page, or once
+  //   the page's last line is done (waiting for the turn; the next page starts its own)
   // - effects 'line': a line's effect when the line starts; 'word': when its word is said (by the child, heard by the
   //   mic; or in a narrated clip, at the word's place in it: position in the line x clip length)
   // - cues: page turned, book finished, "We want to see the book too!"
@@ -483,7 +484,7 @@ export default function Book({ id, cast, onBack }) {
   useEffect(() => stopAll, []) // leaving stops everything
   const sounds = page?.sounds
   useEffect(() => { preload([sounds?.setting, ...Object.values(sounds?.lines ?? {})]) }, [sounds])
-  useEffect(() => { setLoop(modes.setting && !paused && !confirm ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, sounds])
+  useEffect(() => { setLoop(modes.setting && !paused && !confirm && !turnWait && !finished ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, turnWait, finished, sounds])
   useEffect(() => { duck(!!current && !voiceOf(current) && !turnWait && !finished) }, [current, turnWait, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- voiceOf follows cast
   const wordSound = useRef(null) // { sound, word, narrated, at } of the current line, until played
   useEffect(() => {
