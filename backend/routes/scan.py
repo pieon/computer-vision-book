@@ -19,6 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from backend.config import IMG_DIR, WEIGHTS
 from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, build_page, cover_title, find_names, page_key
+from backend.pipeline.book.sounds import pick_later
 from backend.pipeline.ocr import ocr
 from backend.pipeline.unwarp.unwarp_flip import unwarp_img
 from backend.pipeline.unwarp.utils import IMG_SIZE, load_model
@@ -74,7 +75,10 @@ def add_page(book_id, n, photo, times):
             unwarp_img(model, device, src, IMG_SIZE, os.path.join(img_dir, img), flip=False)
     with timed(times, "ocr"):
         text = ocr(os.path.join(img_dir, img))
-    return commit_page(book_id, n, img, text, times)
+    key, book = commit_page(book_id, n, img, text, times)
+    if key:  # its sound effects are picked in the background: the page is readable without them
+        pick_later(book_id, book[0]["Book"]["Pages"][key])
+    return key, book
 
 
 def commit_page(book_id, n, img, text, times):
@@ -120,31 +124,29 @@ def report(book_id, label, times):
 
 
 def version_paths(book_id, img):
-    """Extra fingerprint versions of page image `img`, newest first: <book>/alt/<img stem>_<YYYYmmdd-HHMMSS-micro>.png, one
-    per reading photo the user placed after a decision-model turn (add_version). /turn tries them when the scan fails."""
+    """Reading versions of page image `img`, newest first: <book>/alt/<img stem>_<YYYYmmdd-HHMMSS-micro>.jpg, one per
+    reading photo the user cropped after a decision-model turn (add_version), as taken. Older ones are .png
+    (unwarped). /turn tries them, against the photo as taken, when the scans fail."""
     stem = os.path.splitext(os.path.basename(img))[0]
     folder = os.path.join(IMG_DIR, book_id, "alt")
-    mine = re.compile(re.escape(stem) + r"_\d{8}-\d{6}-\d{6}\.png")  # not page_003_1's versions for page_003
+    mine = re.compile(re.escape(stem) + r"_\d{8}-\d{6}-\d{6}\.(png|jpg)")  # not page_003_1's versions for page_003
     names = os.listdir(folder) if os.path.isdir(folder) else []
     return [os.path.join(folder, f) for f in sorted(names, reverse=True) if mine.fullmatch(f)]
 
 
 def add_version(book_id, n, photo, times):
-    """Unwarp a reading photo (already cropped to the book) into another version of page n's image. No OCR, no DB
-    change. Returns its path; None if the book has no page n."""
+    """Save a reading photo (already cropped to the book by the user) as another version of page n's image, as taken:
+    not unwarped, so it keeps the tilt and distance the reading camera sees. No OCR, no DB change. Returns its path;
+    None if the book has no page n."""
     doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
     pages = list(doc["book"][0]["Book"]["Pages"].values()) if doc else []  # reader order, same as turn.py
     if n >= len(pages):
         return None
     stem = os.path.splitext(os.path.basename(pages[n]["img"]))[0]
-    out = os.path.join(IMG_DIR, book_id, "alt", f"{stem}_{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png")
+    out = os.path.join(IMG_DIR, book_id, "alt", f"{stem}_{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.jpg")
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        src = os.path.join(tmp, "photo.jpg")
-        with open(src, "wb") as f:
-            f.write(photo)
-        with timed(times, "unwarp"), unwarp_lock:
-            unwarp_img(model, device, src, IMG_SIZE, out, flip=False)  # same as add_page: the app already mirrored it
+    with timed(times, "save"), open(out, "wb") as f:
+        f.write(photo)
     return out
 
 

@@ -11,6 +11,9 @@ from backend.db import books
 from backend.routes.books import (Flag, PageEdit, PageOrder, delete_page, edit_page, flag_page, list_books,
                                   reorder_pages, set_face)
 from backend.routes.scan import commit_page, image_name
+import backend.routes.books as books_route
+
+books_route.pick_later = lambda *a: None  # no LLM / Freesound calls for sound effects here (test_sounds.py)
 
 BOOK = "zz-test-edit"  # throwaway id, deleted at the end
 
@@ -131,7 +134,7 @@ try:
 
     cover_img = books.find_one({"_id": BOOK})["book"][0]["Book"]["Pages"]["Cover"]["img"]
     version = os.path.join(IMG_DIR, BOOK, "alt",
-                           os.path.splitext(os.path.basename(cover_img))[0] + "_20261120-120000-000000.png")
+                           os.path.splitext(os.path.basename(cover_img))[0] + "_20261120-120000-000000.jpg")
     os.makedirs(os.path.dirname(version), exist_ok=True)
     open(version, "wb").close()  # a fingerprint version from a reading (scan.add_version)
     delete_page(BOOK, "Cover")

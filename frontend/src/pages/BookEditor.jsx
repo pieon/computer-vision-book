@@ -1,9 +1,62 @@
-import { useEffect, useState } from 'react'
-import { getJson, request } from '../api.js'
+import { useEffect, useRef, useState } from 'react'
+import { getJson, remove, request } from '../api.js'
 import { TrashIcon } from '../components/icons.jsx'
 
 const NEW = '\u0000new' // speaker <select> value for "+ New character…"
 const lines = (page) => page.text.map(({ Character, Dialogue }) => ({ Character, Dialogue }))
+
+// The page's sound effects (picked from Freesound at scan time, backend/pipeline/book/sounds.py) to review: play each,
+// remove one that doesn't fit (it's never picked for this book again), or pick the page's sounds again.
+function PageSounds({ id, pageKey, page, onChange }) {
+  const [busy, setBusy] = useState(false)
+  const audio = useRef(null)
+  useEffect(() => () => audio.current?.pause(), [])
+  const sounds = page.sounds ?? { setting: null, lines: {} }
+  const rows = [
+    ...(sounds.setting ? [['setting', 'Background', sounds.setting]] : []),
+    ...Object.entries(sounds.lines).map(([i, s]) => [i, `Line ${+i + 1}, on "${s.word}"`, s]),
+  ]
+  function play(sound) {
+    audio.current?.pause()
+    audio.current = new Audio(`/sounds/file/${sound.id}.mp3`)
+    audio.current.play().catch((e) => console.log('[sfx] preview failed:', e))
+  }
+  function drop(slot) {
+    audio.current?.pause()
+    remove(`/books/${id}/pages/${pageKey}/sounds/${slot}`)
+      .catch((e) => window.alert(`Couldn't remove it: ${e.message}`))
+      .then(() => getJson(`/books/${id}`)).then((b) => b && onChange(b[0].Book.Pages[pageKey].sounds))
+  }
+  function again() {
+    setBusy(true)
+    request(`/books/${id}/pages/${pageKey}/sounds`, { method: 'POST' })
+      .then(onChange)
+      .catch((e) => window.alert(`Couldn't pick sounds: ${e.message}`))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <section className="editor-sounds" aria-label="Sound effects">
+      <div className="d-flex align-items-center gap-2 flex-wrap">
+        <h2 className="h5 me-auto mb-0">Sounds</h2>
+        <button type="button" className="btn btn-sm btn-outline-light" disabled={busy} onClick={again}>
+          {busy ? 'Picking...' : 'Pick again'}
+        </button>
+      </div>
+      <p className="text-secondary small mb-2">Picked automatically from Freesound for the narrator's lines; remove any that don't fit. Editing the lines picks them again.</p>
+      {rows.length === 0 && <p className="text-secondary">No sounds on this page.</p>}
+      {rows.map(([slot, label, s]) => (
+        <div className="editor-sound" key={slot}>
+          <div className="editor-sound-what">
+            <strong>{label}</strong>: {s.keyword}
+            <span className="text-secondary"> · {s.name} by {s.user}</span>
+          </div>
+          <button type="button" className="btn btn-sm btn-outline-light" onClick={() => play(s)}>Play</button>
+          <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => drop(slot)}>Remove</button>
+        </div>
+      ))}
+    </section>
+  )
+}
 
 // Edit one page's lines (opened from the Pages list, PageList.jsx): its photo and lines; fix each line's text and who
 // says it, add/delete/reorder lines. Saves with PUT /books/<id>/pages/<key> (backend/routes/books.py edit_page);
@@ -99,6 +152,9 @@ export default function BookEditor({ id, index, onBack }) {
       ))}
       <button type="button" className="btn btn-outline-light mt-2"
         onClick={() => change((d) => [...d, { Character: 'Narrator', Dialogue: '' }])}>+ Add line</button>
+
+      <PageSounds id={id} pageKey={key} page={page}
+        onChange={(sounds) => setBook((b) => ({ ...b, Pages: { ...b.Pages, [key]: { ...b.Pages[key], sounds } } }))} />
     </div>
   )
 }

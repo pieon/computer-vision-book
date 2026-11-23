@@ -6,10 +6,10 @@ import cv2
 import numpy as np
 
 from backend.config import IMG_DIR
-from backend.routes.turn import image_page_check
+from backend.routes.turn import _page_check, version_check
 
 
-def test_image_page_check():
+def test_page_check():
     book = max(os.listdir(IMG_DIR), key=lambda d: len(os.listdir(os.path.join(IMG_DIR, d))))  # most pages
     a, b = sorted(os.path.join(IMG_DIR, book, f) for f in os.listdir(os.path.join(IMG_DIR, book)))[1:3]
     img = cv2.imread(b)
@@ -20,15 +20,15 @@ def test_image_page_check():
         photo, blank = os.path.join(tmp, "photo.png"), os.path.join(tmp, "blank.png")
         cv2.imwrite(photo, moved)
         cv2.imwrite(blank, np.full((h, w, 3), 200, np.uint8))
-        best, scores, version = image_page_check(photo, [a, b], 0)
-        assert version is None  # the scans decided
+        best, scores = _page_check(photo, [a, b], 0)
         assert best == 1, scores  # turned to the next page
-        assert image_page_check(photo, [b, a], 0)[0] == 0, scores  # still on this page
-        assert image_page_check(blank, [a, b], 0)[0] == 0  # nothing recognisable: stay
-        # the scans fail (blank), a version of the next page matches: that version decides; older ones are tried too
-        best, v_scores, version = image_page_check(photo, [blank, blank], 0, [[blank], [blank, b]])
+        assert _page_check(photo, [b, a], 0)[0] == 0, scores  # still on this page
+        assert _page_check(blank, [a, b], 0)[0] == 0  # nothing recognisable: stay
+        # a version of the next page matches: that version decides; older ones are tried too
+        best, v_scores, version = version_check(photo, [[blank], [blank, b]], 0)
         assert (best, version) == (1, os.path.basename(b)), (v_scores, version)
-        assert image_page_check(photo, [blank, blank], 0, [[blank], [blank]])[::2] == (0, None)  # none match: stay
+        assert version_check(photo, [[blank], [blank]], 0) is None  # none match: unsure
+        assert version_check(photo, [[], []], 0) is None  # no versions
     print("ok", scores)
 
 
@@ -69,8 +69,9 @@ def test_sheet_decision():
 
 
 def test_versions():
-    """add_version unwarps a photo into <book>/alt/ without touching the DB; version_paths lists a page's versions
-    newest first, and not another page's whose name starts the same (page_002 vs page_002_1)."""
+    """add_version saves the photo as sent (no unwarp) into <book>/alt/ without touching the DB; version_paths lists a
+    page's versions newest first, old .png and new .jpg, and not another page's whose name starts the same
+    (page_002 vs page_002_1)."""
     from backend.routes import scan
 
     book = max(os.listdir(IMG_DIR), key=lambda d: len(os.listdir(os.path.join(IMG_DIR, d))))
@@ -89,15 +90,17 @@ def test_versions():
             second = scan.add_version("zz", 0, photo, {})
             other = scan.add_version("zz", 1, photo, {})
             assert scan.add_version("zz", 2, photo, {}) is None  # no such page
-            assert scan.version_paths("zz", "page_002.png") == [second, first], os.listdir(os.path.dirname(first))
+            old = os.path.join(tmp, "zz", "alt", "page_002_20200101-000000-000000.png")  # an unwarped one from before
+            open(old, "wb").close()
+            assert scan.version_paths("zz", "page_002.png") == [second, first, old], os.listdir(os.path.dirname(first))
             assert scan.version_paths("zz", "page_002_1.png") == [other]
-            assert cv2.imread(first) is not None
+            assert first.endswith(".jpg") and open(first, "rb").read() == photo  # kept as taken
         finally:
             scan.IMG_DIR, scan.books = real_dir, real_books
     print("ok versions")
 
 
 if __name__ == "__main__":
-    test_image_page_check()
+    test_page_check()
     test_versions()
     test_sheet_decision()

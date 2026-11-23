@@ -49,7 +49,7 @@ export function mixedStep(state, event) {
       return { state: { ...START, done: 'decision' }, action: { done: 'decision' }, log: `→ turn: decision model says page_turn (p ${event.p})` }
     }
     const said = event.error ? `failed: ${event.error}`
-      : `said ${event.choice} (p ${event.p})${event.choice === 'page_turn' ? ', below 0.9' : ''}`
+      : `said ${event.choice} (p ${event.p})${event.choice === 'page_turn' ? ', below the cutoff (turn.py TURN_P)' : ''}`
     return { state: { ...START }, action: null, log: `decision ${said}; waiting for the next motion` }
   }
   return none

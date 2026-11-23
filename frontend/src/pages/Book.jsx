@@ -3,6 +3,7 @@ import { getJson, request, timing, ttsUrl } from '../api.js'
 import { frameBuffer, frameSheet, snap, startCamera, watchMotion } from '../camera.js'
 import { FlagIcon, MicIcon, NextIcon, NextPageIcon, PauseIcon, PlayIcon, PrevIcon, PrevPageIcon } from '../components/icons.jsx'
 import { narrator } from '../narrator.js'
+import { duck, loadModes, playEffect, played, preload, saveModes, setLoop, stopAll } from '../sounds.js'
 import BookEditor from './BookEditor.jsx'
 import PagePick from './PagePick.jsx'
 import { isRead, variants, words } from '../reading.js'
@@ -94,7 +95,7 @@ const TURN_CHECKS = {
       const counts = (s) => Object.entries(s).map(([k, v]) => `p${+k + 1} ${v.inliers}/${v.total} (good ${v.good})`).join(' · ')
       const verdict = (to) => (to !== page ? `TURNED to page ${to + 1}` : 'same page')
       const after = stopped ? ' · (after turn)' : ''
-      const via = version ? ` · via reading version ${version}` : '' // the scan failed, a saved reading photo matched
+      const via = version ? ` · via reading version ${version}` : '' // the scans failed, a saved reading photo matched
       console.log(`%c ORB %c page ${page + 1} → ${verdict(p)} · ${counts(scores)} · 25 to turn${via}${after}`,
         BADGE.orb, p !== page ? BADGE.yes : BADGE.no,
         `| ${Math.round(blob.size / 1024)} KB |`, timing({}, times, performance.now() - sentAt))
@@ -103,7 +104,7 @@ const TURN_CHECKS = {
   },
 
   // a sheet done while a request is in flight is dropped
-  // The backend turns only on "page_turn" with p >= 0.9 (turn.py TURN_P); a less sure "page_turn", "no_turn" and
+  // The backend turns only on "page_turn" with p >= turn.py TURN_P; a less sure "page_turn", "no_turn" and
   // "unclear" all mean not turned this round.
   decision(video, query, page, goTo) {
     let stopped = false
@@ -118,7 +119,7 @@ const TURN_CHECKS = {
         request(`/turn/decide?${query}`, { method: 'POST', body: blob })
           .then(({ choice, page_turn: turned, p, error, saved, times }) => {
             const answer = error ? `error ${error}` : turned ? `PAGE TURN (p ${p}) → page ${page + 2}`
-              : choice === 'page_turn' ? `page_turn (p ${p}), below 0.9: not turned` : `${choice} (p ${p})`
+              : choice === 'page_turn' ? `page_turn (p ${p}), below the cutoff (turn.py TURN_P): not turned` : `${choice} (p ${p})`
             console.log(`%c DECISION %c page ${page + 1} · ${answer}${stopped ? ' · (after turn)' : ''}`,
               BADGE.decision, error ? BADGE.err : turned ? BADGE.yes : BADGE.no,
               `| ${saved} |`, timing({ capture: ms }, times, performance.now() - sentAt))
@@ -249,6 +250,11 @@ export default function Book({ id, cast, onBack }) {
 
   // Track the reading progress.
   function onText(text, final) {
+    const ws = wordSound.current // word-timed effect of the child's line: as soon as the word is heard, interim or not
+    if (ws && !ws.narrated && !pausedRef.current && words(text).includes(ws.word)) {
+      wordSound.current = null
+      playEffect(ws.sound, `said "${ws.word}"`)
+    }
     if (!final || pausedRef.current) return
     if (!tracking.current && pageDone.current) { // page finished: nothing left to read, so anything said is talk
       const said = words(text)
@@ -397,6 +403,14 @@ export default function Book({ id, cast, onBack }) {
     setConfirm(null)
     setPaused(false)
   }
+  // The Next page button: the user says the book is on the next page, so no PagePick. Its photo is kept like a
+  // decision-model turn's (usually the check missed a turned page), for CropPhotos after reading; Skip there drops it.
+  function nextPage() {
+    const p = index + 1
+    goPage(p)
+    const video = videoRef.current
+    if (video?.videoWidth) snap(video, (s) => shots.current.push({ ...s, page: p })) // full frame, like decisionTurn
+  }
   const leave = () => onBack(shots.current) // the Library opens CropPhotos if there are any
 
   // A new line starts with nothing heard; only the reader's lines are matched against speech.
@@ -430,6 +444,7 @@ export default function Book({ id, cast, onBack }) {
     const goTo = (p, by) => {
       setIndex(p)
       setLine(0)
+      if (modesRef.current.cues) playEffect(cuesRef.current.turn, 'cue: page turned')
       if (by === 'decision') decisionTurn(video, p)
     }
     // 'mixed' turns the page itself; beside 'decision' a logged-only copy can run (beside 'orb' it would just be a
@@ -447,6 +462,37 @@ export default function Book({ id, cast, onBack }) {
       ? recordSheets(video, query, index, mixed?.onSheet) : () => {}
     return () => { stopCheck(); stopSheets(); mixed?.stop(); setAskBook(false) }
   }, [paused, turnWait, index, id])
+
+  // Sound effects (sounds.js; picked per page at scan time), in the modes switched on in the Sounds menu:
+  // - setting: the page's background loop, quieter while the child reads; off while paused or picking the page
+  // - effects 'line': a line's effect when the line starts; 'word': when its word is said (by the child, heard by the
+  //   mic; or in a narrated clip, at the word's place in it: position in the line x clip length)
+  // - cues: page turned, book finished, "We want to see the book too!"
+  const [modes, setModes] = useState(loadModes)
+  const modesRef = useRef(modes) // for goTo and onText, which hold old renders
+  useEffect(() => { modesRef.current = modes; saveModes(modes) }, [modes])
+  const cuesRef = useRef({}) // { turn, end, ask } from /sounds/cues
+  useEffect(() => {
+    if (modes.cues && !cuesRef.current.turn) getJson('/sounds/cues').then((c) => { cuesRef.current = c }).catch((e) => console.log('[sfx] cues failed:', e))
+  }, [modes.cues])
+  useEffect(() => { played.clear(); return stopAll }, []) // credits are this reading's; leaving stops everything
+  const sounds = page?.sounds
+  useEffect(() => { preload([sounds?.setting, ...Object.values(sounds?.lines ?? {})]) }, [sounds])
+  useEffect(() => { setLoop(modes.setting && !paused && !confirm ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, sounds])
+  useEffect(() => { duck(!!current && !voiceOf(current) && !turnWait && !finished) }, [current, turnWait, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- voiceOf follows cast
+  const wordSound = useRef(null) // { sound, word, narrated, at } of the current line, until played
+  useEffect(() => {
+    const sound = sounds?.lines?.[line]
+    wordSound.current = null
+    if (!sound || !current || pausedRef.current) return
+    if (modes.effects === 'line') return playEffect(sound, 'line start')
+    if (modes.effects !== 'word') return
+    const word = words(sound.word)[0]
+    const all = words(current.Dialogue)
+    wordSound.current = { sound, word, narrated: !!voiceOf(current), at: Math.max(0, all.indexOf(word)) / all.length }
+  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps -- once per line; a mode change applies from the next line
+  useEffect(() => { if (finished && modes.cues) playEffect(cuesRef.current.end, 'cue: book finished') }, [finished]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (askBook && modes.cues) playEffect(cuesRef.current.ask, 'cue: see the book') }, [askBook]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The follow-up question is read aloud when tapped
   const questionAudio = useRef(null)
@@ -493,6 +539,11 @@ export default function Book({ id, cast, onBack }) {
     const tick = () => {
       const { currentTime: t, duration: d, ended } = narrator
       if (barRef.current) barRef.current.value = ended || !Number.isFinite(d) || !d ? 0 : t / d
+      const ws = wordSound.current // word-timed effect: reached the word's place in the clip
+      if (ws?.narrated && Number.isFinite(d) && d && t / d >= ws.at) {
+        wordSound.current = null
+        playEffect(ws.sound, `narrated "${ws.word}" at ${Math.round(ws.at * 100)}%`)
+      }
       frame = requestAnimationFrame(tick)
     }
     tick()
@@ -514,6 +565,22 @@ export default function Book({ id, cast, onBack }) {
         <button type="button" className="btn btn-outline-light" onClick={leave}>To Library</button>
         <h1 className="h3 mb-0">Page {index + 1}</h1>
         <div className="reader-head-end">
+          <details className="reader-sounds">
+            <summary>Sounds</summary>
+            <div className="reader-sounds-menu">
+              <label className="form-check"><input className="form-check-input" type="checkbox" checked={modes.setting}
+                onChange={(e) => setModes({ ...modes, setting: e.target.checked })} /> Page background</label>
+              <fieldset>
+                <legend>Line effects</legend>
+                {[['off', 'Off'], ['line', 'When the line starts'], ['word', 'On the word']].map(([v, label]) => (
+                  <label className="form-check" key={v}><input className="form-check-input" type="radio" name="sfx-effects"
+                    checked={modes.effects === v} onChange={() => setModes({ ...modes, effects: v })} /> {label}</label>
+                ))}
+              </fieldset>
+              <label className="form-check"><input className="form-check-input" type="checkbox" checked={modes.cues}
+                onChange={(e) => setModes({ ...modes, cues: e.target.checked })} /> Cues (turn, end, see the book)</label>
+            </div>
+          </details>
           <div className="form-check form-switch mb-0">
             <input className="form-check-input" type="checkbox" role="switch" id="show-text"
               checked={showText} onChange={(e) => setShowText(e.target.checked)} />
@@ -580,6 +647,19 @@ export default function Book({ id, cast, onBack }) {
           </div>
         )}
         {finished && <button type="button" className="btn btn-primary" onClick={leave}>Back to Library</button>}
+        {finished && played.size > 0 && (
+          <div className="reader-credits">
+            <p>Sounds from <a href="https://freesound.org" target="_blank" rel="noreferrer">Freesound.org</a></p>
+            <ul>
+              {[...played.values()].map((s) => (
+                <li key={s.id}>
+                  <a href={`https://freesound.org/s/${s.id}/`} target="_blank" rel="noreferrer">{s.name}</a> by {s.user}
+                  {' · '}{/^https?:/.test(s.license) ? <a href={s.license} target="_blank" rel="noreferrer">licence</a> : s.license}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
       {/* at the bottom, above the camera */}
       {pages && (
@@ -589,7 +669,7 @@ export default function Book({ id, cast, onBack }) {
           <button type="button" className="reader-play" aria-label={paused ? 'Play' : 'Pause'}
             onClick={() => setPaused(!paused)}>{paused ? PlayIcon : PauseIcon}</button>
           <button type="button" aria-label="Next line" disabled={turnWait || finished} onClick={skipLine}>{NextIcon}</button>
-          <button type="button" aria-label="Next page" disabled={index === pages.length - 1} onClick={() => goPage(index + 1)}>{NextPageIcon}</button>
+          <button type="button" aria-label="Next page" disabled={index === pages.length - 1} onClick={nextPage}>{NextPageIcon}</button>
         </div>
       )}
 

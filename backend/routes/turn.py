@@ -1,5 +1,5 @@
-"""The reader's page-turn routes. POST /turn: a photo of the open book -> which page it shows (ORB matching against
-the unwarped scans, then their reading versions). POST /turn/decide: a 10-frame sheet -> ARC's
+"""The reader's page-turn routes. POST /turn: a photo of the open book -> which page it shows (ORB matching: the
+unwarped photo against the unwarped scans, then the photo as taken against its reading versions). POST /turn/decide: a 10-frame sheet -> ARC's
 decision model says if a page is being turned. POST /turn/sheet: save a sheet only, for review. Uses scan.py's unwarp
 model, timed() and version_paths()."""
 import base64
@@ -27,13 +27,14 @@ router = APIRouter()
 SHEET_DIR = os.path.join(ROOT, "output", "turn_sheets")  # every /turn/decide and /turn/sheet sheet, one folder per reading
 # a "page_turn" answer turns the page only this sure: below it most were not real flips (3 of 25 saved page_turn
 # sheets reached 0.9, 2026-11-19). ponytail: tune from the p in output/turn_sheets/ file names
-TURN_P = 0.7
+TURN_P = 0.65
 
 
 def page_after_turn(book_id, page, photo, times):
-    """Unwarp the photo and compare it with this page and the next (nothing saved). Returns (page, {page: counts},
-    version): version = the extra fingerprint version that matched (see image_page_check). Fills `times` like
-    add_page."""
+    """Which page the photo shows, this one or the next (nothing saved): the unwarped photo against the unwarped scans
+    (_page_check); if that's unsure, the photo as taken against the pages' reading versions (version_check).
+    Returns (page, {page: counts}, version): version = the reading version's file name that decided, else None.
+    Fills `times` like add_page."""
     with timed(times, "db_read"):
         doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
         pages = doc["book"][0]["Book"]["Pages"].values() if doc else []
@@ -46,8 +47,12 @@ def page_after_turn(book_id, page, photo, times):
         with timed(times, "unwarp"):
             unwarp_img(model, device, src, IMG_SIZE, out, flip=False)  # same as add_page: the app already mirrored it
         with timed(times, "match"):
-            best, scores, version = image_page_check(out, paths, page, versions)
-    return best, scores, version
+            best, scores = _page_check(out, paths, page)
+        if any(s["inliers"] >= 25 for s in scores.values()):
+            return best, scores, None
+        with timed(times, "match_versions"):
+            found = version_check(src, versions, page)
+    return found or (best, scores, None)
 
 
 def sheet_decision(sheet, page, reading, times):
@@ -149,24 +154,20 @@ def _page_check(photo_path, page_paths, page):
     return (best if best in scores and scores[best]["inliers"] >= 25 else page), scores
 
 
-def image_page_check(photo_path, page_paths, page, versions=()):
-    """The current check: the unwarped photo against the unwarped scans (page_00N.png), see _page_check. If neither
-    page reaches 25 inliers there, against the pages' extra versions (versions[i] = page i's, newest first,
-    scan.version_paths): newest of both pages, then the next newest, ...; the first where a page reaches 25 decides.
-    Returns (page, scores, version): version = the matching version's file name, None when the scans decided (or
-    nothing matched: then the scans' scores)."""
-    best, scores = _page_check(photo_path, page_paths, page)
-    if any(s["inliers"] >= 25 for s in scores.values()):
-        return best, scores, None
+def version_check(photo_path, versions, page):
+    """The photo as taken (not unwarped) against the pages' reading versions (versions[i] = page i's, newest first,
+    scan.version_paths): cropped reading photos as taken, so a tilted, far-away book matches what the camera saw
+    then. Newest of both pages, then the next newest, ...; the first where a page reaches 25 inliers decides.
+    (page, scores, version file name), or None if none does."""
     # ponytail: an unsure photo is checked against every version of both pages, so each reading that adds one makes
     # unsure replies slower; try only the newest few (versions[i][:N]) if the ORB replies get slow
-    mine = [list(versions[i]) if i < len(versions) else [] for i in range(len(page_paths))]
+    mine = [list(v) for v in versions]
     for k in range(max((len(mine[i]) for i in (page, page + 1) if i < len(mine)), default=0)):
         paths = [v[k] if k < len(v) else "" for v in mine]  # "": no k-th version, skipped like a missing file
         v_best, v_scores = _page_check(photo_path, paths, page)
         if any(s["inliers"] >= 25 for s in v_scores.values()):
             return v_best, v_scores, os.path.basename(paths[max(v_scores, key=lambda i: v_scores[i]["inliers"])])
-    return best, scores, None
+    return None
 
 
 @router.post("/turn")

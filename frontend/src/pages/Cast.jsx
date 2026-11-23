@@ -3,6 +3,7 @@ import { getJson, ttsUrl } from '../api.js'
 import Cropper from '../components/Cropper.jsx'
 import { PersonSilhouette, PlayIcon } from '../components/icons.jsx'
 import { narrator, unlock } from '../narrator.js'
+import { unlockSounds } from '../sounds.js'
 import { Orb, orbOf, orbStyle, READER, VOICES } from '../components/Orb.jsx'
 
 const DEFAULTS = { Narrator: 'Aoede' }
@@ -141,6 +142,7 @@ export default function Cast({ id, onStart, onBack }) {
   const start = () => {
     narrator.pause()
     unlock() // Safari plays narration only after a tap
+    unlockSounds() // and sound effects
     const cast = Object.fromEntries(Object.entries(boxes).map(([name, v]) => [name, v === READER.voice ? '' : v]))
     onStart({ ...cast, Onomatopoeia: cast.Narrator }) // sound words are always read by whoever reads the Narrator
   }

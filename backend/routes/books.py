@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from backend.config import IMG_DIR
 from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, cover_title, page_key
+from backend.pipeline.book.sounds import pick_later
 from backend.routes.scan import version_paths
 
 router = APIRouter()
@@ -79,6 +80,7 @@ def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = P
             name = cover_title(pages[key]) or name
         book = book_json(name, pages, [], doc["book"][0]["Book"]["Characters"])
         books.update_one({"_id": book_id}, {"$set": {"book": book, "updatedAt": datetime.now(timezone.utc)}})
+    pick_later(book_id, pages[key])  # the lines changed: so may their sounds
     return book
 
 

@@ -31,27 +31,14 @@ export function crop(source, band = FULL) {
   return [0, y, width, Math.round(band.bottom * height) - y]
 }
 
-// An already-taken photo (an <img> of a snap(): mirrored already, so not again), turned `angle` degrees clockwise
-// about its centre, then cut to `band`, as a JPEG blob for onBlob. Same size frame when turned: corners turned out of
-// it are cut off, uncovered ones are black, as on screen (CSS rotate in a black, overflow-hidden box). At angle 0 it's
-// what snap(video, ..., { band }) would have sent.
-export function cropImage(img, band, onBlob, { angle = 0, quality = 0.92 } = {}) {
-  const w = img.naturalWidth
-  const h = img.naturalHeight
-  const turned = document.createElement('canvas')
-  turned.width = w
-  turned.height = h
-  const t = turned.getContext('2d')
-  t.fillStyle = '#000'
-  t.fillRect(0, 0, w, h)
-  t.translate(w / 2, h / 2)
-  t.rotate((angle * Math.PI) / 180)
-  t.drawImage(img, -w / 2, -h / 2)
-  const [sx, sy, sw, sh] = crop({ naturalWidth: w, naturalHeight: h }, band)
+// An already-taken photo (an <img> of a snap(): mirrored already, so not again) cut to `band`, as a JPEG blob for
+// onBlob: what snap(video, ..., { band }) would have sent.
+export function cropImage(img, band, onBlob, { quality = 0.92 } = {}) {
+  const [sx, sy, sw, sh] = crop(img, band)
   const canvas = document.createElement('canvas')
   canvas.width = sw
   canvas.height = sh
-  canvas.getContext('2d').drawImage(turned, sx, sy, sw, sh, 0, 0, sw, sh)
+  canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
   canvas.toBlob((blob) => blob && onBlob(blob), 'image/jpeg', quality)
 }
 
