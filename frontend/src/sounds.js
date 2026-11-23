@@ -13,13 +13,13 @@ export function saveModes(modes) {
   try { localStorage.setItem('soundModes', JSON.stringify(modes)) } catch { /* private mode: not remembered */ }
 }
 
-// Background loop volume, after levelling (loudness()): recordings range from near-silent room tone to loud traffic,
-// so each is first brought to the same loudness. Tune these two by ear.
-const LOOP = 0.5
-const LOOP_DUCKED = 0.2 // while the child reads: quieter for them and the mic
-const LOOP_RMS = 0.1 // the loudness every loop is levelled to (RMS of the samples, 1 = full scale)
+// Every sound is levelled to a set loudness (loudness(): RMS of its loud part, 1 = full scale), since Freesound clips
+// range from near-silent room tone to loud traffic (100x apart). The voices (narrator.js, full volume) measure about
+// 0.2 (output/tts, 2026-11-23), so: voice loudest, effects a bit under it, the background well under. Tune by ear.
+const EFFECT = 0.1 // about half the voice
+const LOOP = 0.04 // a fifth of the voice
+const LOOP_DUCKED = 0.015 // while the child reads: quieter for them and the mic
 const MAX_BOOST = 12 // a near-silent recording isn't raised more than this, so its hiss doesn't become a roar
-const EFFECT = 0.6
 const FADE = 0.5 // s
 
 const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -41,27 +41,45 @@ export const preload = (list) => list.forEach((s) => s && load(s).catch(() => {}
 // Sounds played this reading, for the credits (Freesound: credit each creator per the sound's licence)
 export const played = new Map()
 
-// RMS of the first channel, every 50th sample (enough for a loudness estimate)
+// How loud a recording sounds: the RMS of its loudest fifth of 50 ms windows (first channel, every 4th sample), so the
+// silence around a short knock doesn't make it count as quiet. Also its peak, so levelling never clips.
 function loudness(buffer) {
   const data = buffer.getChannelData(0)
-  let sum = 0
-  let n = 0
-  for (let i = 0; i < data.length; i += 50, n++) sum += data[i] * data[i]
-  return Math.sqrt(sum / Math.max(n, 1)) || 1e-4
+  const size = Math.max(1, Math.round(buffer.sampleRate * 0.05))
+  const windows = []
+  let peak = 0
+  for (let at = 0; at < data.length; at += size) {
+    let sum = 0
+    let n = 0
+    for (let i = at; i < Math.min(at + size, data.length); i += 4, n++) {
+      sum += data[i] * data[i]
+      peak = Math.max(peak, Math.abs(data[i]))
+    }
+    windows.push(sum / Math.max(n, 1))
+  }
+  windows.sort((a, b) => b - a)
+  const top = windows.slice(0, Math.max(1, Math.ceil(windows.length / 5)))
+  return { rms: Math.sqrt(top.reduce((a, b) => a + b, 0) / top.length) || 1e-4, peak: peak || 1e-4 }
 }
 
-function start(sound, volume, loop) {
+// Play `sound` levelled to loudness `target` (EFFECT / LOOP): its gain is target / its loudness, but at most
+// MAX_BOOST and never so much that its peak clips. Starts silent if `fadeIn` (a loop fades in itself).
+// Resolves to { src, gain, full: that levelled gain }.
+function start(sound, target, loop, fadeIn = false) {
   const gain = ctx.createGain()
-  gain.gain.value = volume
+  gain.gain.value = 0
   gain.connect(ctx.destination)
   return load(sound).then((buffer) => {
+    const { rms, peak } = loudness(buffer)
+    const full = Math.min(MAX_BOOST, target / rms, 1 / peak)
+    if (!fadeIn) gain.gain.value = full
     const src = ctx.createBufferSource()
     src.buffer = buffer
     src.loop = loop
     src.connect(gain)
     src.start()
     played.set(sound.id, sound)
-    return { src, gain, level: loop ? Math.min(MAX_BOOST, LOOP_RMS / loudness(buffer)) : 1 }
+    return { src, gain, full }
   })
 }
 
@@ -87,15 +105,15 @@ export function setLoop(sound) {
   loop = null
   if (!sound) return
   console.log(`[sfx] loop ${sound.keyword}`)
-  const playing = start(sound, 0, true)
-  playing.then(({ gain, level }) => gain.gain.setTargetAtTime((ducked ? LOOP_DUCKED : LOOP) * level, ctx.currentTime, FADE / 3),
+  const playing = start(sound, LOOP, true, true)
+  playing.then(({ gain, full }) => gain.gain.setTargetAtTime(ducked ? full * LOOP_DUCKED / LOOP : full, ctx.currentTime, FADE / 3),
     (e) => console.log(`[sfx] loop ${sound.keyword} failed:`, e))
   loop = { sound, playing }
 }
 // Quieter while the child reads
 export function duck(on) {
   ducked = on
-  loop?.playing.then(({ gain, level }) => gain.gain.setTargetAtTime((on ? LOOP_DUCKED : LOOP) * level, ctx.currentTime, 0.1), () => {})
+  loop?.playing.then(({ gain, full }) => gain.gain.setTargetAtTime(on ? full * LOOP_DUCKED / LOOP : full, ctx.currentTime, 0.1), () => {})
 }
 export function stopAll() {
   setLoop(null)

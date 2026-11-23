@@ -54,6 +54,7 @@ const SHEET_AFTER = 5
 // "We want to see the book too!". A reply comes about every 0.5 s (server ~0.4 s: unwarp + match), so ~3 s: past a
 // hand passing over the book, soon enough for the child to fix it.
 const SHOW_BOOK_AFTER = 6
+const NEXT_SHOT_MS = 1000 // the Next page button's photo waits this long, so the hand is out of the way
 
 // Console badges for the page-turn checks (filter "ORB" / "DECISION")
 const BADGE = {
@@ -405,11 +406,15 @@ export default function Book({ id, cast, onBack }) {
   }
   // The Next page button: the user says the book is on the next page, so no PagePick. Its photo is kept like a
   // decision-model turn's (usually the check missed a turned page), for CropPhotos after reading; Skip there drops it.
+  // The photo waits NEXT_SHOT_MS, so the hand that tapped (or turned the page) is out of the way.
   function nextPage() {
     const p = index + 1
     goPage(p)
     const video = videoRef.current
-    if (video?.videoWidth) snap(video, (s) => shots.current.push({ ...s, page: p })) // full frame, like decisionTurn
+    setTimeout(() => {
+      // skipped if the camera stopped meanwhile (left the book)
+      if (video?.videoWidth && video.srcObject?.active) snap(video, (s) => shots.current.push({ ...s, page: p })) // full frame, like decisionTurn
+    }, NEXT_SHOT_MS)
   }
   const leave = () => onBack(shots.current) // the Library opens CropPhotos if there are any
 

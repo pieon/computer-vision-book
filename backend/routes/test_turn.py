@@ -9,9 +9,14 @@ from backend.config import IMG_DIR
 from backend.routes.turn import _page_check, version_check
 
 
+def most_pages():
+    """The page images (.png) of the stored book with the most of them (its folder also holds alt/ and others)."""
+    return max(([os.path.join(IMG_DIR, d, f) for f in sorted(os.listdir(os.path.join(IMG_DIR, d))) if f.endswith(".png")]
+                for d in os.listdir(IMG_DIR) if os.path.isdir(os.path.join(IMG_DIR, d))), key=len)
+
+
 def test_page_check():
-    book = max(os.listdir(IMG_DIR), key=lambda d: len(os.listdir(os.path.join(IMG_DIR, d))))  # most pages
-    a, b = sorted(os.path.join(IMG_DIR, book, f) for f in os.listdir(os.path.join(IMG_DIR, book)))[1:3]
+    a, b = most_pages()[1:3]
     img = cv2.imread(b)
     h, w = img.shape[:2]
     # page B as a fresh photo would differ: slightly rotated and darker
@@ -74,9 +79,7 @@ def test_versions():
     (page_002 vs page_002_1)."""
     from backend.routes import scan
 
-    book = max(os.listdir(IMG_DIR), key=lambda d: len(os.listdir(os.path.join(IMG_DIR, d))))
-    photo_src = sorted(f for f in os.listdir(os.path.join(IMG_DIR, book)) if f.endswith(".png"))[1]
-    with open(os.path.join(IMG_DIR, book, photo_src), "rb") as f:
+    with open(most_pages()[1], "rb") as f:
         photo = f.read()
     real_dir, real_books = scan.IMG_DIR, scan.books
 

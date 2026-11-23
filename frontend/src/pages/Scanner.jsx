@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { remove, timing } from '../api.js'
-import { BAND, BandLine } from '../BandLine.jsx'
+import { CORNERS, CornerDots, cornersBand } from '../CornerDots.jsx'
 import { snap, startCamera, watchMotion } from '../camera.js'
 import { cancel as cancelUploads, enqueue, progress, useScanQueue } from '../scanQueue.js'
 
@@ -12,8 +12,9 @@ const STEPS = [ // what to do next, by how many photos are taken
 ]
 
 // start: the first page position to fill. 0 = a new book (cover first); > 0 = adding pages to the end of a book.
-// First the setup: the user drags two lines to the top and bottom of the book and confirms; then every photo is cut to
-// that band before it's sent, so the table and lap never reach the unwarp, OCR or the page fingerprints.
+// First the setup: the user drags four dots to the corners of the book and confirms; then every photo is cut to the
+// corners' rows before it's sent, with the corners, and the server straightens the book out of it (scan.py
+// straighten), so the table and lap never reach the unwarp, OCR or the page fingerprints.
 export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const videoRef = useRef(null)
   const needTurn = useRef(false) // a page was taken: wait for the next turn before the next photo
@@ -23,8 +24,11 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const [toast, setToast] = useState('')
   const [taken, setTaken] = useState([]) // labels of the photos taken, in order
   const [ratio, setRatio] = useState(4 / 3)
-  const [phase, setPhase] = useState('setup') // 'setup': placing the band lines; 'scan': taking photos
-  const [band, setBand] = useState(BAND) // { top, bottom } of the book, fractions of the frame height
+  const [phase, setPhase] = useState('setup') // 'setup': placing the corner dots; 'scan': taking photos
+  const [corners, setCorners] = useState(CORNERS) // the book's corners, fractions of the frame
+  const band = cornersBand(corners) // their rows: the photo is cut to these before upload
+  // the corners as fractions of that cut photo, "x,y" x4, for /scan
+  const inBand = corners.flatMap((c) => [c.x, (c.y - band.top) / (band.bottom - band.top || 1)])
   useScanQueue() // re-render as pages finish processing
   const { done = 0, failed = 0, total = 0 } = progress(bookId) ?? {}
 
@@ -46,7 +50,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   // A photo is sent right away in the background (scanQueue.js, several at once), so the camera is free for the next
   // page and processing carries on after Done.
   const count = useRef(start) // next page position, for labels (state updates lag behind)
-  function add(photo, t) {
+  function add(photo, t, cut) {
     URL.revokeObjectURL(photo.url)
     const i = count.current++
     const label = i ? `Page ${i}` : 'Cover'
@@ -60,7 +64,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
         console.log('[scan]', label, `-> ${reply.page} (${Math.round(photo.blob.size / 1024)} KB) |`,
           timing({ ...t, queued: sentAt - takenAt }, reply.times, performance.now() - sentAt))
       } else console.log('[scan]', label, 'failed twice:', err) // the backend prints its step times
-    })
+    }, cut)
   }
 
   // Cancel scanning: leave right away and drop this book from the DB (JSON and page images) in the background; the
@@ -103,17 +107,17 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
           // flip: first motion -> settling began; settle: the still wait; snap: photo encode
           const t = { flip: stillSince - movedAt, settle: snapAt - stillSince }
           movedAt = null
-          snap(video, (p) => add(p, { ...t, snap: performance.now() - snapAt }), { band })
+          snap(video, (p) => add(p, { ...t, snap: performance.now() - snapAt }, inBand), { band })
         }
       }
     }, band)
-  }, [ready, phase]) // eslint-disable-line react-hooks/exhaustive-deps -- band is fixed while scanning; add only uses refs, setters and bookId
+  }, [ready, phase]) // eslint-disable-line react-hooks/exhaustive-deps -- the corners are fixed while scanning; add only uses refs, setters and bookId
 
   const processing = total - done - failed
   const last = taken.at(-1)
   const setup = phase === 'setup'
   const guide = setup
-    ? 'Drag the lines to the top and bottom of the book, then tap Confirm.'
+    ? 'Open the book and drag the four dots to its corners, then tap Confirm.'
     : `${last ? `✓ ${last} taken. ` : ''}${start && !taken.length ? 'Open to the page you want to add.' : STEPS[Math.min(start + taken.length, STEPS.length - 1)]}`
 
   return (
@@ -130,11 +134,8 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
         <div className="scan-view">
           <video ref={videoRef} autoPlay playsInline muted /* mirrored in CSS, same as snap() */ />
           {ready && <>
-            {/* outside the band is darker: that part of the frame is cut off every photo */}
-            <div className="scan-shade" style={{ top: 0, height: `${band.top * 100}%` }} />
-            <div className="scan-shade" style={{ top: `${band.bottom * 100}%`, bottom: 0 }} />
-            <BandLine which="top" band={band} setBand={setBand} fixed={!setup} />
-            <BandLine which="bottom" band={band} setBand={setBand} fixed={!setup} />
+            {/* outside the corners is darker: that part of the frame is cut off every photo */}
+            <CornerDots corners={corners} setCorners={setCorners} fixed={!setup} />
           </>}
           {taken.length > 0 && <div className="scan-flash" key={`flash${taken.length}`} />}
           <section className="scan-guide" aria-live="polite" key={`${phase}${taken.length}`} /* re-keyed so each message fades in */>

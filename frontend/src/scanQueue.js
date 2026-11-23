@@ -44,8 +44,9 @@ function pump() {
 }
 
 // Send photo `n` of this book now (or as soon as one of the MAX_IN_FLIGHT slots frees up).
+// corners: the book's corners in the photo, [x, y] x4 as fractions (Scanner's dots), or null.
 // onResult(reply, error, sentAt) runs when it's done (not if the book was cancelled); sentAt = when its upload started.
-export function enqueue(bookId, n, blob, onResult) {
+export function enqueue(bookId, n, blob, onResult, corners = null) {
   let b = books.get(bookId)
   if (!b) books.set(bookId, (b = { total: 0, done: 0, failed: 0, cancelled: false, uploads: new Set() }))
   b.total++
@@ -54,7 +55,7 @@ export function enqueue(bookId, n, blob, onResult) {
     const sentAt = performance.now()
     const upload = new AbortController()
     b.uploads.add(upload)
-    const send = () => request(`/scan?book=${bookId}&n=${n}`, { method: 'POST', body: blob, signal: upload.signal })
+    const send = () => request(`/scan?${new URLSearchParams({ book: bookId, n, ...(corners && { corners: corners.map((v) => v.toFixed(4)).join(',') }) })}`, { method: 'POST', body: blob, signal: upload.signal })
     try {
       const reply = await send().catch((e) => { if (b.cancelled) throw e; return send() })
       if (b.cancelled) return
