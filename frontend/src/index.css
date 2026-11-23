@@ -179,7 +179,11 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor .editor-tools { display: flex; gap: 4px; }
 .editor .editor-tools .btn { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square */
 .editor .editor-tools svg { width: 18px; height: 18px; } /* trash icon at the arrows' size */
-.editor .editor-tools .btn-outline-danger { margin-left: 15px; } /* apart from the arrows, so it's not tapped by mistake */
+.editor .editor-grip { flex: 0 0 32px; align-self: stretch; display: grid; place-items: center; min-height: 44px;
+  color: #ffffff80; letter-spacing: -3px; cursor: grab; touch-action: none; user-select: none; border-radius: 6px; }
+.editor .editor-grip:hover, .editor .editor-grip:focus-visible { color: #fff; background: #ffffff14; }
+.editor .editor-line.dragging { background: #ffffff14; border-radius: 8px; }
+.editor .editor-line.dragging .editor-grip { cursor: grabbing; color: #fff; }
 .editor .pages-row { align-items: center; flex-wrap: nowrap; }
 .editor .pages-open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0;
   background: none; color: inherit; text-align: left; }
@@ -307,7 +311,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   border: 9px solid transparent; border-bottom: 0; border-top-color: #fff; }
 @media (prefers-reduced-motion: reduce) { .reader-cast-item { transition: none; } .reader-cast-bubble { animation: none; } }
 
-/* Book.jsx: the Sounds menu (which sound-effect modes are on, to compare them) and the Freesound credits at the end */
+/* Book.jsx: the Sounds menu (which sound-effect modes are on, to compare them) */
 .reader-sounds { position: relative; }
 .reader-sounds summary { cursor: pointer; padding: 4px 10px; border: 1px solid #ffffff40; border-radius: 999px; list-style: none; }
 .reader-sounds summary::-webkit-details-marker { display: none; }
@@ -317,12 +321,11 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   box-shadow: 0 8px 24px #000a; text-align: left; }
 .reader-sounds-menu fieldset { margin: 0; padding: 0; border: 0; }
 .reader-sounds-menu legend { margin: 0 0 4px; font-size: .8rem; color: #ffffffa0; float: none; width: auto; }
-.reader-credits { margin-top: 16px; font-size: .8rem; color: #ffffffa0; }
-.reader-credits p { margin: 0 0 4px; }
-.reader-credits ul { margin: 0; padding: 0; list-style: none; }
-.reader-credits a { color: inherit; }
 
 /* Edit Book: the page's sound effects to review (BookEditor.jsx PageSounds) */
 .editor-sounds { margin-top: 24px; padding-top: 16px; border-top: 1px solid #ffffff1f; }
 .editor-sound { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ffffff14; }
 .editor-sound-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.editor-sound .btn { flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square, like the line tools */
+.editor-sound .btn svg { width: 18px; height: 18px; }
+.editor-sound .btn-outline-danger { margin-left: 15px; } /* apart from Play, so it is not tapped by mistake */

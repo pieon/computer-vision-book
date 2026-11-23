@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getJson, remove, request } from '../api.js'
-import { TrashIcon } from '../components/icons.jsx'
+import { PauseIcon, PlayIcon, TrashIcon } from '../components/icons.jsx'
 
 const NEW = '\u0000new' // speaker <select> value for "+ New character…"
 const lines = (page) => page.text.map(({ Character, Dialogue }) => ({ Character, Dialogue }))
@@ -9,6 +9,7 @@ const lines = (page) => page.text.map(({ Character, Dialogue }) => ({ Character,
 // remove one that doesn't fit (it's never picked for this book again), or pick the page's sounds again.
 function PageSounds({ id, pageKey, page, onChange }) {
   const [busy, setBusy] = useState(false)
+  const [playing, setPlaying] = useState(null) // id of the sound previewing now
   const audio = useRef(null)
   useEffect(() => () => audio.current?.pause(), [])
   const sounds = page.sounds ?? { setting: null, lines: {} }
@@ -16,13 +17,22 @@ function PageSounds({ id, pageKey, page, onChange }) {
     ...(sounds.setting ? [['setting', 'Background', sounds.setting]] : []),
     ...Object.entries(sounds.lines).map(([i, s]) => [i, `Line ${+i + 1}, on "${s.word}"`, s]),
   ]
-  function play(sound) {
+  function stop() {
     audio.current?.pause()
-    audio.current = new Audio(`/sounds/file/${sound.id}.mp3`)
-    audio.current.play().catch((e) => console.log('[sfx] preview failed:', e))
+    setPlaying(null)
+  }
+  // Play / Pause: one preview at a time; playing another stops the last
+  function toggle(sound) {
+    if (playing === sound.id) return stop()
+    stop()
+    const a = new Audio(`/sounds/file/${sound.id}.mp3`)
+    a.onended = () => setPlaying((p) => (p === sound.id ? null : p))
+    audio.current = a
+    setPlaying(sound.id)
+    a.play().catch((e) => { console.log('[sfx] preview failed:', e); setPlaying(null) })
   }
   function drop(slot) {
-    audio.current?.pause()
+    stop()
     remove(`/books/${id}/pages/${pageKey}/sounds/${slot}`)
       .catch((e) => window.alert(`Couldn't remove it: ${e.message}`))
       .then(() => getJson(`/books/${id}`)).then((b) => b && onChange(b[0].Book.Pages[pageKey].sounds))
@@ -50,8 +60,10 @@ function PageSounds({ id, pageKey, page, onChange }) {
             <strong>{label}</strong>: {s.keyword}
             <span className="text-secondary"> · {s.name} by {s.user}</span>
           </div>
-          <button type="button" className="btn btn-sm btn-outline-light" onClick={() => play(s)}>Play</button>
-          <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => drop(slot)}>Remove</button>
+          <button type="button" className="btn btn-sm btn-outline-light" aria-label={`${playing === s.id ? 'Pause' : 'Play'} ${label}`}
+            onClick={() => toggle(s)}>{playing === s.id ? PauseIcon : PlayIcon}</button>
+          <button type="button" className="btn btn-sm btn-outline-danger" aria-label={`Remove ${label}`}
+            onClick={() => drop(slot)}>{TrashIcon}</button>
         </div>
       ))}
     </section>
@@ -67,6 +79,7 @@ export default function BookEditor({ id, index, onBack }) {
   const [draft, setDraft] = useState([]) // this page's lines being edited: [{Character, Dialogue}]
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [dragging, setDragging] = useState(null) // index of the line being dragged by its grip, or null
 
   useEffect(() => {
     getJson(`/books/${id}`)
@@ -87,7 +100,21 @@ export default function BookEditor({ id, index, onBack }) {
     setDirty(true)
   }
   const setLine = (i, field, value) => change((d) => d.map((l, j) => (j === i ? { ...l, [field]: value } : l)))
-  const move = (i, to) => change((d) => { const c = [...d]; [c[i], c[to]] = [c[to], c[i]]; return c })
+  const move = (i, to) => change((d) => { const c = [...d]; c.splice(to, 0, ...c.splice(i, 1)); return c })
+
+  // Dragging a line by its grip (far left): pointer events, since iPad Safari has no HTML drag and drop for touch. The
+  // line moves live to the row under the finger; arrow keys on the grip move it one row.
+  function dragTo(e) {
+    if (dragging === null) return
+    const rows = [...e.currentTarget.closest('.editor').querySelectorAll('.editor-line')]
+    const under = rows.findIndex((r) => e.clientY < r.getBoundingClientRect().bottom)
+    const to = under < 0 ? rows.length - 1 : under
+    if (to !== dragging) {
+      move(dragging, to)
+      setDragging(to)
+    }
+  }
+  const stopDrag = () => setDragging(null)
 
   function pickSpeaker(i, value) {
     if (value !== NEW) return setLine(i, 'Character', value)
@@ -132,7 +159,16 @@ export default function BookEditor({ id, index, onBack }) {
 
       {draft.length === 0 && <p className="text-secondary">No text on this page.</p>}
       {draft.map((l, i) => (
-        <div className="editor-line" key={i}>
+        <div className={`editor-line${dragging === i ? ' dragging' : ''}`} key={i}>
+          <div className="editor-grip" role="button" tabIndex={0} aria-label={`Move line ${i + 1}: drag, or use the arrow keys`}
+            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(i) }}
+            onPointerMove={dragTo} onPointerUp={stopDrag} onPointerCancel={stopDrag}
+            onKeyDown={(e) => {
+              const to = { ArrowUp: i - 1, ArrowDown: i + 1 }[e.key]
+              if (to === undefined) return
+              e.preventDefault()
+              if (to >= 0 && to < draft.length) move(i, to)
+            }}>⋮⋮</div>
           <select className={`form-select${l.Character === 'Unknown' ? ' editor-unknown' : ''}`} aria-label={`Line ${i + 1} speaker`} value={l.Character}
             onChange={(e) => pickSpeaker(i, e.target.value)}>
             {speakers.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -141,10 +177,6 @@ export default function BookEditor({ id, index, onBack }) {
           <textarea className="form-control" rows={2} aria-label={`Line ${i + 1} text`} value={l.Dialogue}
             onChange={(e) => setLine(i, 'Dialogue', e.target.value)} />
           <div className="editor-tools">
-            <button type="button" className="btn btn-sm btn-outline-light" aria-label={`Move line ${i + 1} up`}
-              disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
-            <button type="button" className="btn btn-sm btn-outline-light" aria-label={`Move line ${i + 1} down`}
-              disabled={i === draft.length - 1} onClick={() => move(i, i + 1)}>↓</button>
             <button type="button" className="btn btn-sm btn-outline-danger" aria-label={`Delete line ${i + 1}`}
               onClick={() => change((d) => d.filter((_, j) => j !== i))}>{TrashIcon}</button>
           </div>

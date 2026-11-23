@@ -38,9 +38,6 @@ function load(sound) {
 // Fetch and decode ahead (a page's sounds when it opens), so an effect on a word isn't late
 export const preload = (list) => list.forEach((s) => s && load(s).catch(() => {}))
 
-// Sounds played this reading, for the credits (Freesound: credit each creator per the sound's licence)
-export const played = new Map()
-
 // How loud a recording sounds: the RMS of its loudest fifth of 50 ms windows (first channel, every 4th sample), so the
 // silence around a short knock doesn't make it count as quiet. Also its peak, so levelling never clips.
 function loudness(buffer) {
@@ -78,7 +75,6 @@ function start(sound, target, loop, fadeIn = false) {
     src.loop = loop
     src.connect(gain)
     src.start()
-    played.set(sound.id, sound)
     return { src, gain, full }
   })
 }

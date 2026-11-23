@@ -3,7 +3,7 @@ import { getJson, request, timing, ttsUrl } from '../api.js'
 import { frameBuffer, frameSheet, snap, startCamera, watchMotion } from '../camera.js'
 import { FlagIcon, MicIcon, NextIcon, NextPageIcon, PauseIcon, PlayIcon, PrevIcon, PrevPageIcon } from '../components/icons.jsx'
 import { narrator } from '../narrator.js'
-import { duck, loadModes, playEffect, played, preload, saveModes, setLoop, stopAll } from '../sounds.js'
+import { duck, loadModes, playEffect, preload, saveModes, setLoop, stopAll } from '../sounds.js'
 import BookEditor from './BookEditor.jsx'
 import PagePick from './PagePick.jsx'
 import { isRead, variants, words } from '../reading.js'
@@ -480,7 +480,7 @@ export default function Book({ id, cast, onBack }) {
   useEffect(() => {
     if (modes.cues && !cuesRef.current.turn) getJson('/sounds/cues').then((c) => { cuesRef.current = c }).catch((e) => console.log('[sfx] cues failed:', e))
   }, [modes.cues])
-  useEffect(() => { played.clear(); return stopAll }, []) // credits are this reading's; leaving stops everything
+  useEffect(() => stopAll, []) // leaving stops everything
   const sounds = page?.sounds
   useEffect(() => { preload([sounds?.setting, ...Object.values(sounds?.lines ?? {})]) }, [sounds])
   useEffect(() => { setLoop(modes.setting && !paused && !confirm ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, sounds])
@@ -652,19 +652,6 @@ export default function Book({ id, cast, onBack }) {
           </div>
         )}
         {finished && <button type="button" className="btn btn-primary" onClick={leave}>Back to Library</button>}
-        {finished && played.size > 0 && (
-          <div className="reader-credits">
-            <p>Sounds from <a href="https://freesound.org" target="_blank" rel="noreferrer">Freesound.org</a></p>
-            <ul>
-              {[...played.values()].map((s) => (
-                <li key={s.id}>
-                  <a href={`https://freesound.org/s/${s.id}/`} target="_blank" rel="noreferrer">{s.name}</a> by {s.user}
-                  {' · '}{/^https?:/.test(s.license) ? <a href={s.license} target="_blank" rel="noreferrer">licence</a> : s.license}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
       {/* at the bottom, above the camera */}
       {pages && (
