@@ -13,12 +13,13 @@ function autoCast(names) {
   const free = VOICES.map((v) => v.voice).filter((v) => !names.some((n) => DEFAULTS[n] === v))
   return Object.fromEntries(names.map((n) => [n, DEFAULTS[n] ?? free.shift() ?? '']))
 }
-const STEP = 84 // px between ring slots; also px of swipe per slot
+const RING_ORB = 80 // px: the voice orbs in the ring and in the cards (and flying between them)
+const STEP = 116 // px between ring slots; also px of swipe per slot
 
 // A copy of an orb glides from one element's spot to another's (Web Animations), then is removed.
 function fly(fromRect, toRect, orb) {
   if (!fromRect || !toRect || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
-  const size = 56
+  const size = RING_ORB
   const el = document.createElement('span')
   el.className = `cast-orb cast-orb-flying${orb === READER ? ' cast-orb-reader' : ''}`
   el.style.cssText = `${orbStyle(orb, size)};left:0;top:0`
@@ -157,36 +158,35 @@ export default function Cast({ id, onStart, onBack }) {
       {error && <div className="alert alert-danger">Couldn't load book: {error}</div>}
       {!error && !boxes && <p>Loading...</p>}
 
-      {boxes && Object.entries(boxes).map(([name, key]) => {
+      {/* one card per character: their picture (tap to crop) on the left, the circle their voice goes in on the right */}
+      {boxes && <div className="cast-cards">{Object.entries(boxes).map(([name, key]) => {
         const orb = key && orbOf(key)
         return (
-          <div className={`cast-row${picked?.row === name ? ' picked' : ''}`} key={name}>
+          <div className={`cast-card${picked?.row === name ? ' picked' : ''}`} key={name}>
             {name === 'Narrator' // not pictured in the book: a placeholder, nothing to crop
-              ? <span className="cast-face"><PersonSilhouette className="cast-page cast-silhouette" /></span>
+              ? <span className="cast-face"><PersonSilhouette className="cast-page cast-silhouette" /><span className="cast-name">{name}</span></span>
               : <button type="button" className="cast-face" onClick={() => setCropping(name)}
                 aria-label={faces[name] ? `${name}'s picture. Tap to crop again` : `Crop a picture of ${name}`}>
                 {faces[name] || firstImg[name]
                   ? <img className="cast-page" src={`/images/${id}/${faces[name] || firstImg[name]}`} alt="" loading="lazy" />
                   : <span className="cast-page" />}
+                <span className="cast-name">{name}</span>
                 <span className="cast-face-badge" aria-hidden="true">{faces[name] ? '✎' : '✂'}</span>
               </button>}
-            <button type="button" className="cast-who" onClick={() => tapBox(name)} aria-label={`Choose a voice for ${name}`}>
-              <span className="cast-name">{name}</span>
-            </button>
-            <span className="cast-slot">
-            <button type="button" ref={(el) => { boxRefs.current[name] = el }}
-              className={`cast-box${picked?.orb ? ' ready' : ''}`} onClick={() => tapBox(name)}
-              aria-label={orb ? `${name}: ${orb.name}. Tap to ${picked?.orb ? 'swap' : 'remove'}` : `${name}: empty (Reader). Tap to place a voice`}>
-              {orb && !hidden.has(`box:${name}`) && <Orb orb={orb} size={48} label={false} />}
-            </button>
-            <span className="cast-box-name">{orb ? orb.name : 'Reader'}</span>
-            </span>
-            <button type="button" className="cast-play" aria-label={`Hear ${name}'s voice`}
-              style={{ visibility: orb && orb !== READER ? 'visible' : 'hidden' }}
-              onClick={() => preview(key, orb.name)}>{PlayIcon}</button>
+            {/* the whole side is the target; the circle is the focusable control (its click bubbles up here) */}
+            <div className="cast-voice" onClick={() => tapBox(name)}>
+              <button type="button" ref={(el) => { boxRefs.current[name] = el }} className={`cast-box${orb ? ' filled' : ''}${picked?.orb ? ' ready' : ''}`}
+                aria-label={orb ? `${name}: ${orb.name}. Tap to ${picked?.orb ? 'swap' : 'remove'}` : `${name}: empty (Reader). Tap to place a voice`}>
+                {orb && !hidden.has(`box:${name}`) && <Orb orb={orb} size={RING_ORB} label={false} />}
+              </button>
+              <span className="cast-box-name">{orb ? orb.name : 'Reader'}</span>
+              <button type="button" className="cast-play" aria-label={`Hear ${name}'s voice`}
+                style={{ visibility: orb && orb !== READER ? 'visible' : 'hidden' }}
+                onClick={(e) => { e.stopPropagation(); preview(key, orb.name) }}>{PlayIcon}</button>
+            </div>
           </div>
         )
-      })}
+      })}</div>}
       {boxes && <p className="cast-hint">Tap a voice, then a character's circle. Empty circles are read by you.</p>}
 
       {boxes && (
@@ -203,7 +203,7 @@ export default function Cast({ id, onStart, onBack }) {
                 style={{ transform: `translateX(calc(-50% + ${d * STEP}px)) scale(${1 - a * 0.18})`, opacity: 1 - a * 0.28,
                   zIndex: 10 - Math.round(a), visibility: hidden.has(`ring:${orb.voice}`) || Math.abs(d) > 3 ? 'hidden' : 'visible' }}
                 aria-pressed={picked?.orb === orb.voice} onClick={() => tapOrb(orb, d)}>
-                <Orb orb={orb} />
+                <Orb orb={orb} size={RING_ORB} />
               </button>
             )
           })}

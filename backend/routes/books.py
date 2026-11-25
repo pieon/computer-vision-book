@@ -11,8 +11,11 @@ from pydantic import BaseModel, Field, StringConstraints
 from backend.config import IMG_DIR
 from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, cover_title, page_key
-from backend.pipeline.book.sounds import pick_later
+from backend.clients import elevenlabs, freesound, vertex
+from backend.pipeline.book.sounds import pick_later, voiced_lines
 from backend.routes.scan import version_paths
+from backend.routes.sounds import CUES
+from backend.routes.tts import VOICES
 
 router = APIRouter()
 
@@ -32,6 +35,15 @@ class Flag(BaseModel):
 
 class PageOrder(BaseModel):
     order: list[str] = Field(max_length=1000)  # every page key once, in the new order
+
+
+Voice = Annotated[str, StringConstraints(max_length=40)]
+
+
+class Reading(BaseModel):
+    page: int = Field(ge=0, le=999)  # page index being read
+    finished: bool  # the book's last line was read
+    cast: dict[Voice, Voice] = Field(max_length=100)  # {character: voice, "" = read by the reader} (Cast.jsx)
 
 
 @router.get("/books")
@@ -63,6 +75,31 @@ def get_book(book_id: str = Path(pattern=BOOK_ID)):
     if not doc:
         raise HTTPException(404, "no such book")
     return doc["book"]
+
+
+@router.put("/books/{book_id}/reading", status_code=204)
+def save_reading(r: Reading, book_id: str = Path(pattern=BOOK_ID)):
+    """The reader (Book.jsx) on each page and at the end: where reading is and with which voices, so Home can open
+    the last book read where it was left (stats.py). Not updatedAt: reading isn't a change to the book."""
+    done = books.update_one({"_id": book_id}, {"$set": {"lastRead": {**r.model_dump(), "at": datetime.now(timezone.utc)}}})
+    if not done.matched_count:
+        raise HTTPException(404, "no such book")
+
+
+@router.get("/books/{book_id}/progress")
+def scan_progress(book_id: str = Path(pattern=BOOK_ID), n: str = Query(pattern=r"^[0-9]{1,3}(,[0-9]{1,3}){0,999}$")):
+    """How far the pages at positions `n` (0 = cover; the ones a scan sent) are: {n: {text, sounds, voice: [narrator
+    clips made, narrator lines]}}. text: OCR'd and in the book; sounds: picked/generated (pipeline/book/sounds.py).
+    Read from the DB and the clip cache, so it's right after a server restart too. scanQueue.js turns it into a bar."""
+    doc = books.find_one({"_id": book_id}, {"book": 1})
+    pages = doc["book"][0]["Book"]["Pages"] if doc else {}
+    out = {}
+    for i in map(int, n.split(",")):
+        page = pages.get(page_key(i))
+        lines = voiced_lines(page["text"]) if page else []
+        out[i] = {"text": bool(page), "sounds": bool(page) and "sounds" in page,
+                  "voice": [sum(os.path.exists(vertex.clip_path(t)) for t in lines), len(lines)]}
+    return out
 
 
 @router.put("/books/{book_id}/pages/{key}")
@@ -177,6 +214,43 @@ def delete_book(book_id: str = Path(pattern=BOOK_ID)):
     """Remove the book from MongoDB and its page images from disk. The id pattern keeps the path inside IMG_DIR."""
     deleted.add(book_id)  # first, even if nothing is saved yet (404): pages still processing are dropped (scan.py)
     with lock:  # not in the middle of adding a page to it
+        doc = books.find_one({"_id": book_id}, {"book": 1})
         if books.delete_one({"_id": book_id}).deleted_count == 0:
             raise HTTPException(404, "no such book")
         shutil.rmtree(os.path.join(IMG_DIR, book_id), ignore_errors=True)  # may already be gone
+    _drop_files(book_id, doc)
+
+
+def _uses(doc):
+    """(sound ids, line texts) a book doc uses."""
+    sounds, lines = set(), set()
+    for page in (doc or {}).get("book", [{}])[0].get("Book", {}).get("Pages", {}).values():
+        picked = page.get("sounds") or {}
+        sounds |= {s["id"] for s in [picked.get("setting"), *(picked.get("lines") or {}).values()] if s}
+        lines |= {l["Dialogue"].strip() for l in page.get("text", [])}
+    return sounds, lines
+
+
+def _drop_files(book_id, doc):
+    """Delete a deleted book's sound files (output/sfx) and voice clips (output/tts) that no remaining book uses. Both
+    are caches shared by content (the same sound or line can be in another book), so only those. The reader's cue
+    sounds are kept. Clips are dropped in every voice: the reader can give any character any of them."""
+    sounds, lines = _uses(doc)
+    for other in books.find({}, {"book": 1}):
+        s, l = _uses(other)
+        sounds -= s
+        lines -= l
+    for cue in CUES.values():
+        sounds.discard(elevenlabs.sound_id(cue, "effect"))
+        hit = freesound.cache.find_one({"_id": f"effect|{cue}"}) or {}
+        sounds -= {c["id"] for c in (hit.get("candidates") or [])[:1]}
+    paths = [os.path.join(elevenlabs.FILE_DIR, f"{s}.mp3") for s in sounds]
+    paths += [vertex.clip_path(t, v) for t in lines if t for v in VOICES.values()]
+    removed = {"sfx": 0, "tts": 0}
+    for path in paths:
+        try:
+            os.remove(path)
+            removed["sfx" if path.endswith(".mp3") else "tts"] += 1
+        except FileNotFoundError:
+            pass
+    print(f"book {book_id}: removed {removed['sfx']} sounds, {removed['tts']} voice clips", flush=True)

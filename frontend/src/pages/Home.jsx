@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { getJson } from '../api.js'
 import TabBar from '../components/TabBar.jsx'
+import { unlock } from '../narrator.js'
+import { unlockSounds } from '../sounds.js'
 
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -13,8 +15,8 @@ function thisWeek() {
   return DAYS.map((_, i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))
 }
 
-// Round the y-axis top up to a readable number of minutes (at least 30).
-const niceMax = (v) => [30, 60, 90, 120, 180, 240, 360, 480].find((n) => n >= v) ?? Math.ceil(v / 60) * 60
+// The y-axis top: the busiest day rounded up to a whole minute (at least 1).
+const niceMax = (v) => Math.max(1, Math.ceil(v))
 
 // A simple line chart showing the user's reading time over the past week.
 function ReadingChart({ minutes }) {
@@ -74,8 +76,9 @@ function ReadingChart({ minutes }) {
   )
 }
 
-// Home: this week's scanning streak, reading time, and how complete the latest book's speakers are.
-export default function Home({ onHome, onLibrary, onScan }) {
+// Home: this week's scanning streak, reading time, and the last book read: how much of it is read, and a tap opens it
+// where reading left off with the same voices, or at Who reads? if it was finished.
+export default function Home({ onHome, onLibrary, onScan, onOpenBook }) {
   const [stats, setStats] = useState(null)
   const [error, setError] = useState('')
 
@@ -92,7 +95,15 @@ export default function Home({ onHome, onLibrary, onScan }) {
     .filter((r) => dayKey(new Date(r.start)) === dayKey(d)).reduce((sum, r) => sum + r.minutes, 0))
   const scanDays = week.filter((d) => scanned.has(dayKey(d)))
   const latest = stats?.latest
-  const pct = latest?.lines ? Math.round((latest.known / latest.lines) * 100) : 0
+  const read = latest?.read
+  const unfinished = read && !read.finished
+  const page = Math.min(read?.page ?? 0, (latest?.pages ?? 1) - 1) // 0-based; within the book if pages were deleted
+  const pct = !read ? 0 : unfinished ? Math.round((page / latest.pages) * 100) : 100 // pages before this one are read
+  function open() {
+    unlock() // Safari plays narration and sounds only after a tap: this one, when Who reads? is skipped
+    unlockSounds()
+    onOpenBook(unfinished ? { id: latest.id, cast: read.cast, page: read.page } : { id: latest.id, cast: null, page: 0 })
+  }
 
   return (
     <div className="home">
@@ -120,20 +131,23 @@ export default function Home({ onHome, onLibrary, onScan }) {
         <ReadingChart minutes={minutes} />
       </section>
 
-      {latest && (
+      {stats && (
         <section className="home-card" aria-labelledby="home-latest">
-          <h2 id="home-latest">Latest book</h2>
-          <p className="home-book">{latest.name}</p>
-          {latest.lines ? (
+          <h2 id="home-latest">Last Read Book</h2>
+          {latest ? (
             <>
-              <p className="home-sub"><strong>{pct}%</strong> · {latest.known} of {latest.lines} lines have a speaker</p>
+              <button type="button" className="home-open" onClick={open}>
+                <span className="home-book">{latest.name}</span>
+                <span className="home-sub">{unfinished ? 'Pick up where you left off' : 'Read again'} ›</span>
+              </button>
+              <p className="home-sub"><strong>{pct}%</strong> · {unfinished ? `Page ${page + 1} of ${latest.pages}` : 'Finished'}</p>
               <div className="home-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
-                aria-label="Lines with a known speaker">
+                aria-label="How much of the book is read">
                 <span style={{ width: `${pct}%` }} />
               </div>
             </>
           ) : (
-            <p className="home-sub">No dialogue yet</p>
+            <p className="home-sub">No last read book.</p>
           )}
         </section>
       )}

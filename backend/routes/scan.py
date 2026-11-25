@@ -22,7 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from backend.config import IMG_DIR, WEIGHTS
 from backend.db import BOOK_ID, books, deleted, lock
 from backend.pipeline.book.book_builder import book_json, build_page, cover_title, find_names, page_key
-from backend.pipeline.book.sounds import pick_later
+from backend.pipeline.book.sounds import prepare_later
 from backend.pipeline.ocr import ocr
 from backend.pipeline.unwarp.unwarp_flip import unwarp_img
 from backend.pipeline.unwarp.utils import IMG_SIZE, load_model
@@ -104,8 +104,8 @@ def add_page(book_id, n, photo, times, corners=None):
     with timed(times, "ocr"):
         text = ocr(os.path.join(img_dir, img))
     key, book = commit_page(book_id, n, img, text, times)
-    if key:  # its sound effects are picked in the background: the page is readable without them
-        pick_later(book_id, book[0]["Book"]["Pages"][key])
+    if key:  # its sound effects and narrator clips are made in the background (the Library shows the progress)
+        prepare_later(book_id, book[0]["Book"]["Pages"][key])
     return key, book
 
 

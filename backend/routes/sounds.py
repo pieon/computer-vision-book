@@ -1,21 +1,16 @@
-"""Sound effects (Freesound, backend/pipeline/book/sounds.py). POST /books/<id>/sounds picks sounds for a book's
+"""Sound effects (Freesound or ElevenLabs, backend/pipeline/book/sounds.py). POST /books/<id>/sounds picks sounds for a book's
 pages that have none (?all=true: every page again); POST / DELETE /books/<id>/pages/<key>/sounds...: Edit Book's
 review (pick a page again, remove one sound); GET /sounds/cues: the reader's fixed cue sounds;
 GET /sounds/file/<id>.mp3: a picked sound's preview, served from here so the app's Web Audio can play it (same origin)."""
-import os
-import urllib.request
-
 from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from backend.clients import freesound
-from backend.config import ROOT
+from backend.clients import elevenlabs, freesound
 from backend.db import BOOK_ID, books, lock
-from backend.pipeline.book.sounds import set_page_sounds
+from backend.pipeline.book.sounds import set_page_sounds, source
 
 router = APIRouter()
-FILE_DIR = os.path.join(ROOT, "output", "sfx")
 CUES = {"turn": "page turn", "end": "magic chime", "ask": "curious hmm"}  # Book.jsx: page turned, book done, "see the book"
 PAGE_KEY = r"^(Cover|Page[A-Za-z]+)$"  # no . or $: safe in a dotted Mongo path
 SLOT = r"^(setting|[0-9]{1,3})$"  # the background, or a line index
@@ -70,32 +65,17 @@ def remove_sound(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=P
 @router.get("/sounds/cues")
 async def cues():
     """{"turn" | "end" | "ask": sound or null}, searched once and then cached."""
-    return {k: await run_in_threadpool(freesound.find, q, "effect") for k, q in CUES.items()}
-
-
-def _fetch(sound_id):
-    """Download a picked sound's preview MP3 into output/sfx/ once; its path, or None if it was never picked."""
-    path = os.path.join(FILE_DIR, f"{sound_id}.mp3")
-    if os.path.isfile(path):
-        return path
-    hit = freesound.cache.find_one({"candidates.id": sound_id}, {"candidates.$": 1})
-    if not hit:  # only sounds this app searched for: not a proxy for any Freesound file
-        return None
-    os.makedirs(FILE_DIR, exist_ok=True)
-    with urllib.request.urlopen(hit["candidates"][0]["url"], timeout=20) as res:
-        data = res.read()
-    with open(path + ".part", "wb") as f:
-        f.write(data)
-    os.replace(path + ".part", path)  # a half-written file is never served
-    return path
+    return {k: await run_in_threadpool(source().find, q, "effect") for k, q in CUES.items()}
 
 
 @router.get("/sounds/file/{sound_id}.mp3")
-async def sound_file(sound_id: int):
+async def sound_file(sound_id: str = Path(pattern=r"^([0-9]{1,12}|el[0-9a-f]{12})$")):
     """A picked sound's preview MP3. Freesound's terms allow keeping copies only while needed: output/sfx/ is a cache,
     safe to delete. ponytail: kept forever otherwise."""
     try:
-        path = await run_in_threadpool(_fetch, sound_id)
+        # by the id, not SOUND_SOURCE: a page's stored sounds play whichever source is switched on now
+        path = (elevenlabs.download(sound_id) if sound_id.startswith("el")
+                else await run_in_threadpool(freesound.download, int(sound_id)))
     except Exception as e:
         raise HTTPException(502, f"couldn't fetch the sound: {e}") from e
     if not path:

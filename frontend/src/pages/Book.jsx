@@ -224,11 +224,12 @@ function mixedCheck(video, query, page, goTo = null, onOrb = null) {
 }
 
 const constraints = { video: { facingMode: 'user', width: { ideal: 4032 }, height: { ideal: 3024 } }, audio: { echoCancellation: true, noiseSuppression: true } }
-export default function Book({ id, cast, onBack }) {
+// startPage: the page to open on (Home's "continue where you left off"); kept within the book once it loads.
+export default function Book({ id, cast, onBack, startPage = 0 }) {
   const voiceOf = (l) => cast[l?.Character] || ''
   const [pages, setPages] = useState(null) // [{img, text: [{Character, Dialogue}]}] in book order
   const [error, setError] = useState('')
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(startPage)
   const [line, setLine] = useState(0) // the line being read on this page
   const [camStatus, setCamStatus] = useState('Starting camera...')
   const videoRef = useRef(null)
@@ -303,8 +304,16 @@ export default function Book({ id, cast, onBack }) {
   const load = () => getJson(`/books/${id}`)
     .then((book) => Object.entries(book[0].Book.Pages).map(([key, p]) => ({ ...p, key })))
   useEffect(() => {
-    load().then(setPages).catch((e) => setError(e.message))
+    load().then((ps) => { setPages(ps); setIndex((i) => Math.min(i, ps.length - 1)) }).catch((e) => setError(e.message))
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps -- load only uses id
+
+  // Where reading is, with these voices, saved on the server on every page and at the end: Home opens the last book
+  // read on this page (or back to Who reads? once it's finished). A failed save only costs that.
+  useEffect(() => {
+    if (!pages) return
+    request(`/books/${id}/reading`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: index, finished, cast }) }).catch((e) => console.log('[reading] not saved:', e))
+  }, [pages, index, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- id and cast are fixed while reading
 
   const [editing, setEditing] = useState(false)
   const wasPaused = useRef(false)
@@ -483,7 +492,11 @@ export default function Book({ id, cast, onBack }) {
   }, [modes.cues])
   useEffect(() => stopAll, []) // leaving stops everything
   const sounds = page?.sounds
-  useEffect(() => { preload([sounds?.setting, ...Object.values(sounds?.lines ?? {})]) }, [sounds])
+  // this page's sounds and the next page's, so a page's loop is fetched and decoded before the reader reaches it
+  const nextSounds = pages?.[index + 1]?.sounds
+  useEffect(() => {
+    preload([sounds, nextSounds].flatMap((s) => [s?.setting, ...Object.values(s?.lines ?? {})]))
+  }, [sounds, nextSounds])
   useEffect(() => { setLoop(modes.setting && !paused && !confirm && !turnWait && !finished ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, turnWait, finished, sounds])
   useEffect(() => { duck(!!current && !voiceOf(current) && !turnWait && !finished) }, [current, turnWait, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- voiceOf follows cast
   const wordSound = useRef(null) // { sound, word, narrated, at } of the current line, until played

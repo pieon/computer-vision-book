@@ -43,20 +43,24 @@ export function cropImage(img, band, onBlob, { quality = 0.92 } = {}) {
 }
 
 // Full camera resolution (cropped to `band`, see crop()), not the on-screen size, mirrored (the backend unwarps with
-// flip=False). maxWidth/quality shrink it, e.g. for the reader's page-turn check, which the server resizes to 800px
-// anyway. Hands back { blob, url }.
-export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, band = FULL } = {}) {
+// flip=False): the front camera sees the page mirrored, so this turns it the right way round. mirror: false for the
+// back camera, which already sees it the right way. turn: degrees clockwise (0/90/180/270) to turn the photo after
+// that, so the book is upright when the device is held turned from its screen (tilt.js). maxWidth/quality shrink it,
+// e.g. for the reader's page-turn check, which the server resizes to 800px anyway. Hands back { blob, url }.
+export function snap(video, onPhoto, { maxWidth = Infinity, quality = 0.92, band = FULL, mirror = true, turn = 0 } = {}) {
   const [sx, sy, sw, sh] = crop(video, band)
   const scale = Math.min(1, maxWidth / sw)
   const w = Math.round(sw * scale)
   const h = Math.round(sh * scale)
+  const sideways = turn % 180 !== 0
   const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
+  canvas.width = sideways ? h : w
+  canvas.height = sideways ? w : h
   const ctx = canvas.getContext('2d')
-  ctx.translate(w, 0)
-  ctx.scale(-1, 1)
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h)
+  ctx.translate(canvas.width / 2, canvas.height / 2) // turn and mirror about the centre
+  ctx.rotate((turn * Math.PI) / 180)
+  if (mirror) ctx.scale(-1, 1)
+  ctx.drawImage(video, sx, sy, sw, sh, -w / 2, -h / 2, w, h)
   canvas.toBlob((blob) => blob && onPhoto({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', quality)
 }
 

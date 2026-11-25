@@ -27,8 +27,14 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .library .library-cover:disabled { cursor: progress; position: relative; }
 .library .library-cover:disabled > :not(.library-busy) { opacity: 0.5; }
 .library .library-busy { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
-.library .library-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: var(--lib-muted); font-size: 0.85rem; }
-.library .library-progress-failed { color: var(--lib-danger); }
+/* a scanned book being prepared (components/ScanProgress.jsx): in the Library under its cover, and in the Scanner's head */
+.scan-progress { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; color: #a1a1aa; font-size: 0.8rem; }
+.scan-progress progress { width: 100%; min-width: 120px; height: 6px; border: 0; border-radius: 3px; overflow: hidden;
+  appearance: none; -webkit-appearance: none; background: #ffffff26; }
+.scan-progress progress::-webkit-progress-bar { background: #ffffff26; }
+.scan-progress progress::-webkit-progress-value { background: #0a84ff; transition: width 0.4s; }
+.scan-progress progress::-moz-progress-bar { background: #0a84ff; }
+.scan-progress-failed { color: #ff453a; }
 .library .library-more { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%;
   display: grid; place-items: center; background: #000c; color: #fff; font-size: 0.6rem; letter-spacing: 1px; }
 .library .library-more.library-more-warn { background: #ff9f0a; color: #000; font-size: 1.1rem; font-weight: 800; letter-spacing: 0; }
@@ -68,7 +74,9 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .home .home-sub { margin: 4px 0 0; color: var(--home-muted); }
 .home .home-sub strong { color: #eee; }
 .home .home-sub-chart { margin-top: 20px; font-size: 1rem; font-weight: 600; color: #eee; }
-.home .home-book { margin: 6px 0 0; font-weight: 600; }
+.home .home-open { display: block; width: 100%; margin: 6px 0 0; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.home .home-book { display: block; font-weight: 600; }
+.home .home-open .home-sub { display: block; color: #5b9bff; }
 .home .home-days { display: grid; grid-template-columns: repeat(7, 1fr); margin: 16px 0 0; padding: 0; list-style: none; }
 .home .home-days li { display: grid; justify-items: center; gap: 6px; color: var(--home-muted); font-size: 0.9rem; }
 .home .home-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--home-line); }
@@ -100,8 +108,6 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan button:disabled { opacity: 0.4; cursor: default; }
 .scan .scan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .scan .scan-head h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2rem; }
-.scan .scan-count { margin: 0; color: var(--scan-muted); }
-.scan .scan-count strong { color: #eee; }
 .scan .scan-status { margin: -6px 0 0; color: var(--scan-muted); font-size: 0.8rem; }
 .scan .scan-guide { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1; padding: 12px 16px; border-radius: 16px;
   background: rgba(20, 18, 28, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid #ffffff1f;
@@ -113,6 +119,11 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   width: min(100cqw, calc(100cqh * var(--ratio))); height: min(100cqh, calc(100cqw / var(--ratio))); }
 .scan .scan-view video, .scan .scan-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan .scan-view video { transform: scaleX(-1); } /* mirrored, same as snap() */
+.scan .scan-view video.unmirrored { transform: none; } /* the back camera: already the right way round */
+/* Scanner setup: front / back camera, a two-button switch between Cancel and Confirm */
+.scan .scan-camera { display: flex; padding: 3px; border-radius: 999px; background: #ffffff14; }
+.scan .scan-camera button { padding: 8px 14px; border-radius: 999px; color: var(--scan-muted); font-weight: 600; white-space: nowrap; }
+.scan .scan-camera button[aria-pressed="true"] { background: #ffffff26; color: #fff; }
 /* setup band: outside it is darker (cut off every photo); the lines are drag handles with a tall touch area */
 .scan-shade { position: absolute; left: 0; right: 0; background: #000a; pointer-events: none; }
 .scan-quad { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
@@ -142,6 +153,16 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-toast { position: fixed; left: 50%; bottom: 120px; z-index: 10; transform: translateX(-50%); padding: 10px 20px;
   border-radius: 999px; background: rgba(64, 64, 64, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }
+/* a phone: the camera switch gets its own row above Cancel / Confirm, so nothing is pushed off the screen */
+@media (max-width: 600px) {
+  .scan { height: calc(100dvh - 16px); }
+  .scan .scan-head h1 { font-size: 1.5rem; }
+  .scan .scan-guide { padding: 8px 12px; }
+  .scan .scan-guide-text { font-size: 0.95rem; }
+  .scan .scan-controls { grid-template-columns: 1fr 1fr; row-gap: 8px; border-radius: 24px; min-height: 0; }
+  .scan .scan-controls .scan-camera { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
+  .scan .scan-controls > div:empty { display: none; } /* the empty middle cell while scanning */
+}
 
 /* Book reader: page text, camera as a small mirrored window in the bottom-right corner */
 .reader { max-width: 900px; margin: 0 auto; min-height: calc(100dvh - 32px); display: flex; flex-direction: column; } /* 32px: body padding */
@@ -179,12 +200,18 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor .editor-tools { display: flex; gap: 4px; }
 .editor .editor-tools .btn { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square */
 .editor .editor-tools svg { width: 18px; height: 18px; } /* trash icon at the arrows' size */
+/* Edit Book (page list and a page): the full width, 10px from each side (not Bootstrap's centred container) */
+.container.editor { max-width: none; padding-left: 10px; padding-right: 10px; }
+body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's own 16px adds to the 10px */
+
 .editor .editor-grip { flex: 0 0 32px; align-self: stretch; display: grid; place-items: center; min-height: 44px;
   color: #ffffff80; letter-spacing: -3px; cursor: grab; touch-action: none; user-select: none; border-radius: 6px; }
 .editor .editor-grip:hover, .editor .editor-grip:focus-visible { color: #fff; background: #ffffff14; }
 .editor .editor-line.dragging { background: #ffffff14; border-radius: 8px; }
 .editor .editor-line.dragging .editor-grip { cursor: grabbing; color: #fff; }
+.editor .editor-grip[aria-disabled="true"] { opacity: .35; cursor: default; } /* pages still being prepared */
 .editor .pages-row { align-items: center; flex-wrap: nowrap; }
+.editor .pages-row .editor-tools { margin-right: 10px; } /* the delete button, off the edge */
 .editor .pages-open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0;
   background: none; color: inherit; text-align: left; }
 .editor .pages-unknown { display: block; width: fit-content; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
@@ -213,15 +240,20 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 
 /* Cast (who reads?): one row per character, its voice picker and a preview button */
 /* Who reads? (Cast.jsx): character rows with their first page and a box; a ring of voice orbs pinned to the bottom */
-.cast { padding-bottom: 190px !important; } /* clears the ring */
-.cast .cast-row { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid #ffffff1f; border-radius: 12px; }
-.cast .cast-row.picked { background: #ffffff14; }
-.cast .cast-who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
-.cast .cast-page { flex: none; display: block; width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: #ffffff14; }
-.cast .cast-face { flex: none; position: relative; padding: 0; border: 0; background: none; }
-.cast .cast-silhouette { fill: currentColor; color: #ffffff59; } /* the Narrator's placeholder picture */
-.cast .cast-face-badge { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
-  font-size: 12px; background: #5b9bff; color: #fff; box-shadow: 0 0 0 2px var(--bs-body-bg, #212529); }
+.cast { padding-bottom: 195px !important; } /* clears the ring */
+/* one card per character (Cast.jsx): picture on the left, the voice's circle on the right */
+.cast .cast-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.cast .cast-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 190px; border-radius: 16px;
+  background: #ffffff0d; border: 1px solid #ffffff1f; overflow: hidden; transition: border-color .2s, background .2s; }
+.cast .cast-card.picked { border-color: #5b9bff; background: #5b9bff1a; }
+.cast .cast-face { position: relative; display: block; padding: 0; border: 0; background: #ffffff0d; color: inherit; overflow: hidden; }
+.cast .cast-page { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.cast .cast-silhouette { fill: currentColor; color: #ffffff59; padding: 18% 18% 28%; } /* the Narrator's placeholder picture */
+.cast .cast-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px; background: linear-gradient(transparent, #000c);
+  color: #fff; font-weight: 700; text-align: left; overflow-wrap: break-word; }
+.cast .cast-face-badge { position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; background: #5b9bff; color: #fff; box-shadow: 0 0 0 2px #0006; }
+.cast .cast-voice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 12px 8px; cursor: pointer; }
 /* Cast: crop a character's picture from a page (components/Cropper.jsx) */
 .cropper { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
 .cropper-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
@@ -231,10 +263,9 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .cropper-frame { position: absolute; left: 50%; top: 50%; width: min(70vmin, 90%); aspect-ratio: 1; transform: translate(-50%, -50%);
   border: 2px solid #fff; border-radius: 12px; box-shadow: 0 0 0 100vmax #000a; pointer-events: none; }
 .cropper-hint { margin: 0 0 12px; text-align: center; font-size: .85rem; opacity: .7; }
-.cast .cast-name { min-width: 0; overflow-wrap: break-word; font-weight: 600; }
-.cast .cast-box { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 2px dashed #ffffff40; background: none; display: grid; place-items: center; padding: 0; transition: border-color .2s, box-shadow .2s; }
+.cast .cast-box { flex: none; width: 104px; height: 104px; border-radius: 50%; border: 2px dashed #ffffff40; background: none; display: grid; place-items: center; padding: 0; transition: border-color .2s, box-shadow .2s; }
 .cast .cast-box.ready { border-style: solid; border-color: #5b9bff; box-shadow: 0 0 12px #5b9bff80; }
-.cast .cast-slot { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cast .cast-box.filled { border-color: transparent; box-shadow: none; } /* the orb is the target: no dashed circle behind it */
 .cast .cast-box-name { font-size: .75rem; color: #ffffffb0; text-align: center; line-height: 1.2; }
 .cast .cast-play { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: none; color: inherit; display: grid; place-items: center; padding: 0; }
 .cast .cast-play svg { width: 18px; height: 18px; }
@@ -254,14 +285,14 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .cast-orb-flying { position: fixed; z-index: 50; pointer-events: none; }
 .cast-orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .cast-orb-name { font-size: .8rem; white-space: nowrap; color: #fff; }
-.cast .cast-ring { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: 170px; overflow: hidden; touch-action: pan-y; user-select: none;
+.cast .cast-ring { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: 175px; overflow: hidden; touch-action: pan-y; user-select: none;
   background: #16181bf2; border-top: 1px solid #ffffff1f; }
-.cast .cast-ring-center { position: absolute; left: 50%; top: 24px; width: 56px; height: 56px; transform: translateX(-50%); pointer-events: none; }
-.cast .cast-ring-item { position: absolute; left: 50%; top: 24px; padding: 0; border: 0; background: none; color: inherit; transition: transform .3s ease, opacity .3s ease; }
+.cast .cast-ring-center { position: absolute; left: 50%; top: 28px; width: 80px; height: 80px; transform: translateX(-50%); pointer-events: none; }
+.cast .cast-ring-item { position: absolute; left: 50%; top: 28px; padding: 0; border: 0; background: none; color: inherit; transition: transform .3s ease, opacity .3s ease; }
 .cast .cast-ring-item.dragging { transition: none; }
 .cast .cast-ring-item.picked .cast-orb { transform: scale(1.12); box-shadow: 0 0 30px 8px color-mix(in srgb, var(--c) 75%, transparent), inset 0 -6px 14px #0004; }
 .cast .cast-ring-item .cast-orb { transition: transform .2s, box-shadow .2s; }
-.cast .cast-ring-arrow { position: absolute; top: 34px; z-index: 20; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: #16181bcc; color: #fff; font-size: 1.5rem; line-height: 1; padding: 0; }
+.cast .cast-ring-arrow { position: absolute; top: 48px; z-index: 20; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: #16181bcc; color: #fff; font-size: 1.5rem; line-height: 1; padding: 0; }
 .cast .cast-ring-arrow.left { left: 12px; }
 .cast .cast-ring-arrow.right { right: 12px; }
 
@@ -329,3 +360,65 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor-sound .btn { flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square, like the line tools */
 .editor-sound .btn svg { width: 18px; height: 18px; }
 .editor-sound .btn-outline-danger { margin-left: 15px; } /* apart from Play, so it is not tapped by mistake */
+
+/* Landscape (phones and iPads turned sideways): each screen goes side by side instead of one tall column. Portrait
+   keeps the layouts above. */
+@media (orientation: landscape) {
+  /* Scanner: the camera fills the left; heading, status and the buttons (stacked) on the right */
+  .scan { display: grid; max-width: none; column-gap: 16px; row-gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 260px); grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: "stage head" "stage status" "stage controls" "stage ."; }
+  .scan .scan-head { grid-area: head; flex-direction: column; gap: 2px; }
+  .scan .scan-status { grid-area: status; margin: 0; }
+  .scan .scan-stage { grid-area: stage; }
+  .scan .scan-controls { grid-area: controls; display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+    min-height: 0; padding: 10px; border-radius: 24px; }
+  .scan .scan-controls > div:empty { display: none; }
+  .scan .scan-cancel, .scan .scan-done { justify-self: auto; text-align: center; }
+  .scan .scan-camera button { flex: 1; }
+
+  /* Reader: the text on the left (scrolls); the voices, cue and controls on the right; the camera window bottom-left */
+  .reader { display: grid; max-width: 1200px; height: calc(100dvh - 32px); min-height: 0; column-gap: 24px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "head head" "text stage" "text controls"; }
+  .reader > * { grid-column: 1 / -1; } /* loading / error lines */
+  .reader .reader-head { grid-area: head; }
+  .reader .reader-text { grid-area: text; min-height: 0; overflow-y: auto; margin: 0;
+    padding-bottom: calc(min(160px, 22vw) * 0.75 + 24px); } /* the last line can scroll above the camera window */
+  .reader .reader-stage { grid-area: stage; min-height: 0; justify-content: safe center; } /* the speaking orb grows upward: not clipped */
+  .reader .reader-controls { grid-area: controls; margin: 12px 0 0; }
+  .reader:has(.reader-text:empty) .reader-stage { grid-column: 1 / -1; } /* Show text off: the right side takes it all */
+  .reader:has(.reader-text:empty) .reader-controls { grid-column: 1 / -1; }
+  .reader .reader-cam { left: 16px; right: auto; width: min(160px, 22vw); }
+
+  /* Home: the cards in two columns */
+  .home { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: 1000px; align-items: start; }
+  .home .home-title, .home > .alert { grid-column: 1 / -1; }
+
+  /* Library: more covers across */
+  .library { max-width: 1100px; }
+  .library .row > .col-4 { width: 20%; }
+
+  /* Edit Book (a page, not the page list): the photo stays on the left while the lines scroll on the right */
+  .editor:has(> .editor-photo) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: 20px; align-items: start; }
+  .editor:has(> .editor-photo) > * { grid-column: 2; }
+  .editor:has(> .editor-photo) > .editor-photo { grid-column: 1; grid-row: 1 / span 50; position: sticky; top: 16px; margin: 0;
+    max-height: calc(100dvh - 32px); }
+
+  /* page pick and crop photos: fit the height */
+  .page-pick-item { flex-basis: min(40vw, 280px, calc((100dvh - 170px) * 0.75)); }
+  .crop-photos .h5 { font-size: 1rem; margin: 0; }
+  .crop-photos-view img { max-height: calc(100dvh - 150px); }
+}
+@media (orientation: landscape) and (max-width: 700px) {
+  .library .row > .col-4 { width: 25%; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .reader .reader-cast { padding-top: 12px; }
+  .reader .reader-cue { min-height: 0; gap: 10px; }
+  .reader .reader-mic { width: 84px; height: 84px; }
+  .reader .reader-mic svg { width: 40px; height: 40px; }
+  .cast { padding-bottom: 140px !important; }
+  .cast .cast-ring { height: 175px; zoom: 0.72; } /* the whole ring smaller (orbs, labels, arrows) on a short screen */
+  .cast .cast-card { min-height: 150px; }
+}

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { getJson, remove as removeUrl } from '../api.js'
 import { FlagIcon, SearchIcon, SortIcon } from '../components/icons.jsx'
 import TabBar from '../components/TabBar.jsx'
-import { cancel as cancelUploads, progress, scanning, useScanQueue } from '../scanQueue.js'
+import ScanProgress from '../components/ScanProgress.jsx'
+import { cancel as cancelUploads, landed, scanning, useScanQueue } from '../scanQueue.js'
 import Book from './Book.jsx'
 import BookEditor from './BookEditor.jsx'
 import Cast from './Cast.jsx'
@@ -45,25 +46,16 @@ function Cover({ book }) {
   return <img src={`/images/${book.id}/${book.cover}`} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
-// "3 of 7 pages ready" under a book whose scanned pages are still processing; nothing once they're all done.
-function ScanProgress({ id }) {
-  const p = progress(id)
-  if (!p || p.done + p.failed === p.total) return null
-  return (
-    <p className="library-progress" role="status">
-      {p.done} of {p.total} pages ready
-      {p.failed > 0 && <span className="library-progress-failed"> · {p.failed} failed</span>}
-    </p>
-  )
-}
 
 // A simple library of scanned books from MongoDB.
-export default function Library({ onHome, onLibrary, onScan }) {
+// resume: { id, cast, page } from Home's latest book: open it straight away (cast null: Who reads? first).
+export default function Library({ onHome, onLibrary, onScan, resume }) {
   const [books, setBooks] = useState(null) 
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) 
-  const [readId, setReadId] = useState(null)
-  const [cast, setCast] = useState(null) // who reads each character, picked in Cast before reading readId
+  const [readId, setReadId] = useState(resume?.id ?? null)
+  const [cast, setCast] = useState(resume?.cast ?? null) // who reads each character, picked in Cast before reading readId
+  const [startPage, setStartPage] = useState(resume?.page ?? 0) // the page the reader opens on
   const [marking, setMarking] = useState(null) // { id, shots }: the reader closed with photos to mark (CropPhotos)
   const [pagesOf, setPagesOf] = useState(null) // book id open in Edit Book (its Pages list)
   const [editing, setEditing] = useState(null) // page index open in the line editor, from the Pages list
@@ -71,14 +63,15 @@ export default function Library({ onHome, onLibrary, onScan }) {
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
   const [menuFor, setMenuFor] = useState(null) 
-  const queue = useScanQueue() // changes as scanned pages finish in the background (scanQueue.js)
+  useScanQueue() // re-render as scanned books are prepared in the background (scanQueue.js)
+  const pagesIn = landed()
 
   // Reloaded whenever a background page finishes, so new pages and the cover show up.
   useEffect(() => {
     getJson('/books')
       .then(setBooks)
       .catch((e) => setError(e.message))
-  }, [queue, editing, pagesOf, readId]) // and after Edit Book / Pages / the reader close: fixes, page counts, flags
+  }, [pagesIn, editing, pagesOf, readId]) // and after Edit Book / Pages / the reader close: fixes, page counts, flags
 
   // Escape closes the options menu.
   useEffect(() => {
@@ -105,10 +98,11 @@ export default function Library({ onHome, onLibrary, onScan }) {
   if (readId && !cast) return <Cast id={readId} onStart={setCast} onBack={() => setReadId(null)} />
   if (marking) return <CropPhotos id={marking.id} shots={marking.shots} onDone={() => setMarking(null)} />
   if (readId) {
-    return <Book id={readId} cast={cast} onBack={(shots) => {
+    return <Book id={readId} cast={cast} startPage={startPage} onBack={(shots) => {
       if (shots?.length) setMarking({ id: readId, shots })
       setReadId(null)
       setCast(null)
+      setStartPage(0)
     }} />
   }
   if (adding) { // back to Pages either way; added pages keep processing there
@@ -148,7 +142,7 @@ export default function Library({ onHome, onLibrary, onScan }) {
 
       <div className="row g-3">
         {shown.map((b) => {
-          const busy = processing.has(b.id) // pages still uploading/processing: no reading or options menu until they're done
+          const busy = processing.has(b.id) // still uploading or being prepared (OCR, sounds, voice): no reading or menu until ready
           const warn = !busy && b.unknown?.length
           return (
           <div className="col-4 col-md-3" key={b.id}>

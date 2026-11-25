@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { cancel, enqueue, MAX_IN_FLIGHT, progress, scanning } from './scanQueue.js'
+import { cancel, enqueue, fraction, MAX_IN_FLIGHT, progress, scanning, WEIGHTS } from './scanQueue.js'
 
 // fetch that answers after `ms`; `fail(n, attempt)` says whether that call fails. Records calls and peak concurrency.
 function fakeFetch(ms, fail = () => false) {
@@ -7,6 +7,10 @@ function fakeFetch(ms, fail = () => false) {
   const stats = { inFlight: 0, peak: 0 }
   globalThis.fetch = vi.fn(async (url, { signal } = {}) => {
     const q = new URL(url, 'http://x').searchParams
+    if (url.includes('/progress')) { // every page sent is fully prepared
+      const status = Object.fromEntries(q.get('n').split(',').map((n) => [n, { text: true, sounds: true, voice: [1, 1] }]))
+      return { ok: true, status: 200, json: async () => status }
+    }
     const n = Number(q.get('n'))
     const attempt = calls.filter((c) => c === n).length + 1
     calls.push(n)
@@ -36,8 +40,9 @@ test('sends right away, several at once, each with its own page number', async (
   expect(stats.peak).toBe(MAX_IN_FLIGHT)
   expect([...calls].sort()).toEqual([0, 1, 1, 2, 2, 3, 4, 5])
   expect(results).toEqual({ 0: 'ok', 1: 'ok', 2: 'failed', 3: 'ok', 4: 'ok', 5: 'ok' })
-  expect(progress('bookA')).toEqual({ total: 6, done: 5, failed: 1 })
-  expect(scanning()).not.toContain('bookA')
+  expect(progress('bookA')).toMatchObject({ total: 6, done: 5, failed: 1 })
+  await vi.waitFor(() => expect(scanning()).not.toContain('bookA'), { timeout: 2000 }) // once the server says ready
+  expect(progress('bookA')).toMatchObject({ fraction: 1, ready: true, stalled: false })
 })
 
 test('cancel returns at once: photos not sent yet are dropped, the ones in flight aborted and not retried', async () => {
@@ -63,4 +68,17 @@ test('one limit across books, and a new book\'s cover goes first', async () => {
   expect(sent[4]).toBe('bookD/0') // the first free slot goes to the cover, ahead of bookC's waiting pages
   expect(sent.at(-1)).toBe('bookD/1') // other pages keep their place in line
   expect(stats.peak).toBe(MAX_IN_FLIGHT) // never more than the limit across both books
+})
+
+test('progress: weighted steps per page, failed pages count as done, narrator clips line by line', () => {
+  const all = WEIGHTS.text + WEIGHTS.sounds + WEIGHTS.voice
+  const status = {
+    0: { text: true, sounds: true, voice: [2, 2] }, // done
+    1: { text: true, sounds: false, voice: [1, 4] }, // text, a quarter of the clips
+    2: { text: true, sounds: true, voice: [0, 0] }, // no narrator lines: voice counts as done
+    3: { text: false, sounds: false, voice: [0, 0] }, // not OCR'd yet
+  }
+  const got = fraction([0, 1, 2, 3, 4], new Set([4]), status) // 4: upload failed
+  expect(got).toBeCloseTo((all + WEIGHTS.text + WEIGHTS.voice / 4 + all + 0 + all) / (5 * all))
+  expect(fraction([], new Set(), {})).toBe(0)
 })

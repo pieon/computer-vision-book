@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import backend.config  # noqa: F401  loads .env
+from backend.config import ROOT  # also loads .env
 from backend.db import db
 
 URL = "https://freesound.org/apiv2/search/"
@@ -18,6 +18,7 @@ URL = "https://freesound.org/apiv2/search/"
 # played on repeat under the page (waves)
 FILTERS = {"effect": "duration:[0.3 TO 4]", "loop": "duration:[10 TO 120]"}
 GAP = 1.1  # s between searches: Freesound allows 60 a minute (and 2000 a day)
+FILE_DIR = os.path.join(ROOT, "output", "sfx")  # downloaded preview MP3s, served by routes/sounds.py
 cache = db.sounds  # {_id: "<kind>|<keyword>", candidates: [...] (empty: nothing found)}
 _lock = threading.Lock()
 _last = 0.0
@@ -64,3 +65,23 @@ def candidates(keyword, kind):
 def find(keyword, kind):
     """The top result for a fixed keyword (the reader's cues), or None."""
     return next(iter(candidates(keyword, kind)), None)
+
+
+def download(sound_id):
+    """Download a picked sound's preview MP3 into output/sfx/ once; its path, or None if this app never searched it
+    (so the server isn't a proxy for any Freesound file). Slow the first time (a 2-minute loop took 26 s), so sounds
+    are downloaded as soon as they're picked (pipeline/book/sounds.py), not when the reader first plays them."""
+    path = os.path.join(FILE_DIR, f"{sound_id}.mp3")
+    if os.path.isfile(path):
+        return path
+    hit = cache.find_one({"candidates.id": sound_id}, {"candidates.$": 1})
+    if not hit:
+        return None
+    os.makedirs(FILE_DIR, exist_ok=True)
+    with urllib.request.urlopen(hit["candidates"][0]["url"], timeout=20) as res:
+        data = res.read()
+    part = f"{path}.{threading.get_ident()}.part"  # two downloads of one sound at once don't share a temp file
+    with open(part, "wb") as f:
+        f.write(data)
+    os.replace(part, path)  # a half-written file is never served
+    return path
