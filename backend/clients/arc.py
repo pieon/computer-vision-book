@@ -1,5 +1,4 @@
-"""VT ARC's LLM API: chat (multimodal LLM; OCR and speaker labels) and decide (fast decision model; page-turn
-comparison). Needs LLM_API_KEY in .env."""
+"""VT ARC's LLM API: chat (OCR, speakers) and decide (page turns). Needs LLM_API_KEY."""
 import json
 import os
 import urllib.error
@@ -20,7 +19,7 @@ def _post(path, body):
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             return json.load(r)
-    except urllib.error.HTTPError as e:  # the body says why, e.g. 403 "restricted to the VT Campus VPN"
+    except urllib.error.HTTPError as e: # e.g. 403 "restricted to the VT Campus VPN"
         raise RuntimeError(f"ARC API {e.code}: {e.read().decode(errors='replace')[:300]}") from e
 
 
@@ -29,17 +28,15 @@ def chat(content):
     reply = _post("chat/completions", {
         "model": "DeepSeek-V4.1-Flash",  # the multimodal model in ARC's docs
         "messages": [{"role": "user", "content": content}],
-        # default is "high"; reading text verbatim doesn't need it (same OCR text, slightly faster in tests)
+        # the default "high" isn't needed for OCR
         "reasoning_effort": "low",
     })
     return reply["choices"][0]["message"]["content"] or ""  # content can be null
 
 
 def decide(state, questions, images=()):
-    """Ask ARC's fast decision model questions about `state` (text). Returns {question_id: answer}, e.g. a "choice"
-    question gives {"choice": "next", "probabilities": {...}, "confidence": 0.98}.
-    images: data URLs, at most 8 and 8192 tokens in all with the text (~450 tokens at 512 px, capped ~1570 per
-    image). They must go here, not inside `state`: the model reads `state` as plain text, base64 and all."""
+    """Ask the decision model about `state`; returns {question_id: answer}.
+    images: data URLs (max 8), not inside `state`."""
     body = {"model": "decision.vllm-sr/d3-mini", "state": state, "questions": questions}
     if images:
         body["images"] = list(images)

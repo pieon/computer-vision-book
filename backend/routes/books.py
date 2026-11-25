@@ -48,8 +48,7 @@ class Reading(BaseModel):
 
 @router.get("/books")
 def list_books():
-    """Library: newest first, just what a book tile needs (not the texts or pages); cover = page 1's image file;
-    unknown = page numbers (1 = Cover, as in Edit Book) with a line whose speaker is "Unknown"."""
+    """Library tiles, newest first; unknown = page numbers with an "Unknown" speaker"""
     rows = list(books.aggregate([
         {"$sort": {"createdAt": -1}},
         {"$project": {"_id": 0, "id": "$_id", "name": {"$first": "$book.Book.Name"},
@@ -79,8 +78,7 @@ def get_book(book_id: str = Path(pattern=BOOK_ID)):
 
 @router.put("/books/{book_id}/reading", status_code=204)
 def save_reading(r: Reading, book_id: str = Path(pattern=BOOK_ID)):
-    """The reader (Book.jsx) on each page and at the end: where reading is and with which voices, so Home can open
-    the last book read where it was left (stats.py). Not updatedAt: reading isn't a change to the book."""
+    """Save where reading is and the voices, for Home's Last Read Book"""
     done = books.update_one({"_id": book_id}, {"$set": {"lastRead": {**r.model_dump(), "at": datetime.now(timezone.utc)}}})
     if not done.matched_count:
         raise HTTPException(404, "no such book")
@@ -88,9 +86,7 @@ def save_reading(r: Reading, book_id: str = Path(pattern=BOOK_ID)):
 
 @router.get("/books/{book_id}/progress")
 def scan_progress(book_id: str = Path(pattern=BOOK_ID), n: str = Query(pattern=r"^[0-9]{1,3}(,[0-9]{1,3}){0,999}$")):
-    """How far the pages at positions `n` (0 = cover; the ones a scan sent) are: {n: {text, sounds, voice: [narrator
-    clips made, narrator lines]}}. text: OCR'd and in the book; sounds: picked/generated (pipeline/book/sounds.py).
-    Read from the DB and the clip cache, so it's right after a server restart too. scanQueue.js turns it into a bar."""
+    """Progress of pages `n`: {n: {text, sounds, voice: [made, total]}}, from the DB and the clip cache"""
     doc = books.find_one({"_id": book_id}, {"book": 1})
     pages = doc["book"][0]["Book"]["Pages"] if doc else {}
     out = {}
@@ -104,8 +100,7 @@ def scan_progress(book_id: str = Path(pattern=BOOK_ID), n: str = Query(pattern=r
 
 @router.put("/books/{book_id}/pages/{key}")
 def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"^(Cover|Page[A-Za-z]+)$")):
-    """Edit Book (BookEditor.jsx): replace one page's lines and speakers. Characters is rebuilt from the speakers now
-    used in the whole book. The raw OCR (`texts`) is kept as scanned. Replies with the updated book JSON."""
+    """Edit Book: replace one page's lines; Characters is rebuilt. Replies with the book."""
     with lock:  # not while a scanned page is being added to it
         doc = books.find_one({"_id": book_id}, {"book": 1})
         pages = doc and doc["book"][0]["Book"]["Pages"]
@@ -123,9 +118,7 @@ def edit_page(edit: PageEdit, book_id: str = Path(pattern=BOOK_ID), key: str = P
 
 @router.put("/books/{book_id}/pages/{key}/flag")
 def flag_page(flag: Flag, book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"^(Cover|Page[A-Za-z]+)$")):
-    """The reader's flag button (Book.jsx), or unflagging in Edit Book: mark a page as needing a fix. Stored on the
-    page itself, so it moves with the page on reorder and stays through line edits. The key pattern has no . or $,
-    so it's safe in the dotted path."""
+    """Flag or unflag a page as needing a fix"""
     path = f"book.0.Book.Pages.{key}"
     with lock:
         r = books.update_one({"_id": book_id, path: {"$exists": True}}, {"$set": {f"{path}.flagged": flag.flagged}})
@@ -136,9 +129,8 @@ def flag_page(flag: Flag, book_id: str = Path(pattern=BOOK_ID), key: str = Path(
 
 @router.put("/books/{book_id}/face")
 async def set_face(request: Request, book_id: str = Path(pattern=BOOK_ID), name: str = Query(min_length=1)):
-    """Cast screen (Cropper.jsx): the body is a JPEG cropped from a page, the picture shown next to character `name`.
-    Saved as face_<ms>.jpg (a new name each time, so no stale cached crop); the old one is deleted. Replies {"img"}.
-    ponytail: a character dropped by a later edit leaves its face file on disk until the book is deleted."""
+    """Save a character's cropped face (JPEG), replacing the old file. Replies {"img"}.
+    ponytail: a dropped character's face file stays until the book is deleted"""
     jpeg = await request.body()
     if not jpeg.startswith(b"\xff\xd8") or len(jpeg) > 2_000_000:
         raise HTTPException(400, "send a JPEG under 2 MB")
@@ -163,8 +155,7 @@ async def set_face(request: Request, book_id: str = Path(pattern=BOOK_ID), name:
 
 @router.put("/books/{book_id}/order")
 def reorder_pages(edit: PageOrder, book_id: str = Path(pattern=BOOK_ID)):
-    """Pages list: put the pages in a new order, given as the current keys. Keys are reassigned by position
-    (first = Cover, then PageOne, ...) and `texts` is reordered to match. Replies with the updated book JSON."""
+    """Reorder pages by their current keys; keys and `texts` follow. Replies with the book."""
     with lock:
         doc = books.find_one({"_id": book_id}, {"book": 1, "texts": 1})
         pages = doc and doc["book"][0]["Book"]["Pages"]
@@ -183,9 +174,7 @@ def reorder_pages(edit: PageOrder, book_id: str = Path(pattern=BOOK_ID)):
 
 @router.delete("/books/{book_id}/pages/{key}")
 def delete_page(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"^(Cover|Page[A-Za-z]+)$")):
-    """Edit Book: remove one page and its image. Later pages move up a key (PageTwo -> PageOne, ...; deleting the
-    Cover makes PageOne the cover), and `texts` drops the same slot so it stays one per page. Image files keep their
-    names. A book's only page can't be deleted (delete the book). Replies with the updated book JSON."""
+    """Delete one page and its image; later pages move up a key. The only page can't go. Replies with the book."""
     with lock:
         doc = books.find_one({"_id": book_id}, {"book": 1, "texts": 1})
         pages = doc and doc["book"][0]["Book"]["Pages"]
@@ -212,7 +201,7 @@ def delete_page(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=r"
 @router.delete("/books/{book_id}", status_code=204)
 def delete_book(book_id: str = Path(pattern=BOOK_ID)):
     """Remove the book from MongoDB and its page images from disk. The id pattern keeps the path inside IMG_DIR."""
-    deleted.add(book_id)  # first, even if nothing is saved yet (404): pages still processing are dropped (scan.py)
+    deleted.add(book_id) # first, even before anything is saved (404)
     with lock:  # not in the middle of adding a page to it
         doc = books.find_one({"_id": book_id}, {"book": 1})
         if books.delete_one({"_id": book_id}).deleted_count == 0:
@@ -232,9 +221,7 @@ def _uses(doc):
 
 
 def _drop_files(book_id, doc):
-    """Delete a deleted book's sound files (output/sfx) and voice clips (output/tts) that no remaining book uses. Both
-    are caches shared by content (the same sound or line can be in another book), so only those. The reader's cue
-    sounds are kept. Clips are dropped in every voice: the reader can give any character any of them."""
+    """Delete a removed book's sound files and voice clips no other book uses; cue sounds are kept"""
     sounds, lines = _uses(doc)
     for other in books.find({}, {"book": 1}):
         s, l = _uses(other)

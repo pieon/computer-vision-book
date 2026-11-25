@@ -8,9 +8,7 @@ from backend.clients.arc import chat
 
 
 def jpeg_data_url(path, max_side=None):
-    """An image file (e.g. a stored page_00N.png) as a "data:image/jpeg;base64,..." URL for an LLM request, made in
-    memory; the file on disk stays as it is. JPEG quality 85: a page photo is ~10x smaller than the PNG (2385 KB ->
-    237 KB), so it gets to the API much faster. max_side: shrink so the longer side is at most this many pixels."""
+    """Image file as a JPEG data URL for an LLM request (in memory). max_side: longest side in px."""
     img = cv2.imread(path)
     if img is None:
         raise FileNotFoundError(f"Could not read image: {path}")

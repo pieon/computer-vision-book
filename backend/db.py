@@ -8,13 +8,13 @@ from backend.config import MONGO_URL
 BOOK_ID = r"^[A-Za-z0-9_-]{10}$"  # nanoid(10) from App.jsx; no . or /, so a safe folder name
 
 db = MongoClient(MONGO_URL).bookscanner
-# one document per book: {_id, texts: raw OCR per page (None while that page is still processing), book: Book2 JSON, scans: [time per page], createdAt, updatedAt}
+# one doc per book: {_id, texts, book (Book2 JSON), scans, createdAt, updatedAt}
 books = db.books
-# one document per reading session: {bookId, start: datetime, minutes: float}; written by routes/listen.py when the book closes
+# one doc per reading session: {bookId, start, minutes}
 reading = db.reading
-# guards a book doc's read-modify-write while pages are added (OCR itself runs outside it, in parallel)
-# ponytail: one global lock for all books; per-book locks if several scanners share a server
+# guards a book doc's read-modify-write
+# ponytail: one global lock; per-book locks if several scanners share a server
 lock = threading.Lock()
-# ids of deleted books: a page still processing when its book is deleted is dropped instead of re-creating the book
-# ponytail: in memory; a restart forgets it, but also kills the pages still processing
+# deleted book ids: their late pages are dropped
+# ponytail: in memory; a restart forgets it
 deleted = set()

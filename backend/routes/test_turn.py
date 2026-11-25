@@ -38,8 +38,7 @@ def test_page_check():
 
 
 def test_sheet_decision():
-    """Each decision-model answer maps to the reply and file name the reader expects; only "page_turn" with p >= TURN_P turns.
-    The model is faked, so no network."""
+    """Decision-model answers map to the expected replies; only a sure page_turn turns"""
     import asyncio
     import shutil
 
@@ -74,9 +73,7 @@ def test_sheet_decision():
 
 
 def test_versions():
-    """add_version saves the photo as sent (no unwarp) into <book>/alt/ without touching the DB; version_paths lists a
-    page's versions newest first, old .png and new .jpg, and not another page's whose name starts the same
-    (page_002 vs page_002_1)."""
+    """add_version saves as sent into alt/; version_paths lists a page's versions newest first"""
     from backend.routes import scan
 
     with open(most_pages()[1], "rb") as f:

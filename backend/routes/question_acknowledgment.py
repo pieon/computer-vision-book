@@ -1,5 +1,4 @@
-"""Follow-up question from what the child said beyond the book line: POST /question -> {question, expected_answer}.
-An empty question means "nothing worth asking about" (fillers, chatter). Prompts adapted from ../CA lib/prompts.js."""
+"""Follow-up question from what the child said beyond the line: POST /question -> {question, expected_answer}"""
 import json
 import os
 import re
@@ -68,13 +67,12 @@ class Heard(BaseModel):
     unmatched: str
     asked: list[str] = []
     reading: str = ""  # reading id from Book.jsx, for backend/reading_log.py
-    book: str = ""  # with page_img: the page's stored image, sent to GPT as the illustration
+    book: str = "" # page_img: sent to GPT as the illustration
     page_img: str = ""  # e.g. "page_002.png" (the page's "img" in the book JSON)
 
 
 def illustration(book, page_img):
-    """(JPEG data URL of the page's stored image, None) or (None, why there's no image). The names come from the
-    browser, so they're checked before building a path."""
+    """(JPEG data URL, None) or (None, why not); names are checked before building a path"""
     if not book and not page_img:
         return None, "not sent"
     if not re.fullmatch(BOOK_ID.strip("^$"), book) or not re.fullmatch(r"page_\d{3}\.png", page_img):
@@ -82,7 +80,7 @@ def illustration(book, page_img):
     path = os.path.join(IMG_DIR, book, page_img)
     if not os.path.exists(path):
         return None, "no such file"
-    # ponytail: 1024px long side is plenty for a picture-book page; raise if questions miss small details
+    # ponytail: 1024px long side
     return jpeg_data_url(path, max_side=1024), None
 
 
@@ -94,7 +92,7 @@ def question(h: Heard):
             f"<generated_question_list>\n{asked}\n</generated_question_list>")
     reading_log.log(h.reading, "gpt sent", "\n" + user)
     image, why_not = illustration(h.book, h.page_img)
-    if image:  # the page's illustration goes along as an image part of the message, as JPEG
+    if image: # the illustration as a JPEG image part
         content = [{"type": "text", "text": user + "\n<page_illustration> is the current page, with its illustration."},
                    {"type": "image_url", "image_url": {"url": image}}]
         reading_log.log(h.reading, "gpt image", f"{h.book}/{h.page_img} as JPEG ({len(image) * 3 // 4 // 1024} KB)")

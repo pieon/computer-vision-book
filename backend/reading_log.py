@@ -1,5 +1,4 @@
-"""One plain-text log per reading (one open of a book): Deepgram transcripts and GPT question prompts/replies.
-Files land in output/reading_logs/<reading id>.log."""
+"""One plain-text log per reading (transcripts, question prompts and replies) in output/reading_logs/."""
 import os
 import re
 from datetime import datetime

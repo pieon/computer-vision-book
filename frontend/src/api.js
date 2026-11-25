@@ -1,5 +1,4 @@
-// Every request to the backend (server: backend/, proxied by vite.config.js) goes through here, so the
-// "check the status, parse the JSON, make a readable error" step lives in one place.
+// All backend requests: check status, parse JSON, readable errors
 export async function request(url, options) {
   const res = await fetch(url, options)
   if (!res.ok) {
@@ -15,8 +14,7 @@ export const getJson = (url) => request(url)
 // DELETE that also counts "already gone" (404) as done.
 export const remove = (url) => request(url, { method: 'DELETE' }).catch((e) => { if (e.status !== 404) throw e })
 
-// One console line of where a photo request's time went: `client` stages in ms (e.g. flip, settle, snap), then the
-// request split into the server's own {step: seconds} (backend/routes/scan.py timed()) and network (the rest).
+// Console line of a photo request's time: client stages, server steps, network
 export function timing(client, server, requestMs) {
   const ms = (v) => `${Math.round(v)}ms`
   const serverMs = Object.values(server).reduce((a, b) => a + b, 0) * 1000
@@ -26,5 +24,5 @@ export function timing(client, server, requestMs) {
     `+ network ${ms(requestMs - serverMs)} | total ${ms(clientMs + requestMs)}`].join(' ')
 }
 
-// Read-aloud clip of `text` in a Gemini voice (backend/routes/tts.py; cached there, so the same URL is the same clip)
+// Read-aloud clip URL for `text` in a Gemini voice (cached on the server)
 export const ttsUrl = (text, voice) => `/tts?${new URLSearchParams({ text, voice })}`

@@ -10,9 +10,7 @@ router = APIRouter()
 
 @router.get("/stats")
 def stats():
-    """Home page data: scan times and reading sessions from the last 8 days (raw UTC; the app buckets them into
-    its own local Mon-Sun week) and the last book read (lastRead, routes/books.py save_reading): its page count and where
-    reading left off (read: {page, finished, cast}); None until a book has been read."""
+    """Home data: the last 8 days of scans and readings (UTC), and the last book read (None if none)"""
     since = datetime.now(timezone.utc) - timedelta(days=8)
     scans = []
     for doc in books.find({"updatedAt": {"$gte": since}}, {"scans": 1, "updatedAt": 1}):

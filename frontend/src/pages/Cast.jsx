@@ -7,16 +7,15 @@ import { unlockSounds } from '../sounds.js'
 import { Orb, orbOf, orbStyle, READER, VOICES } from '../components/Orb.jsx'
 
 const DEFAULTS = { Narrator: 'Aoede' }
-// Every character starts with a voice: the Narrator gets theirs, the rest take the unused voices in order.
-// More characters than voices: the extra ones start empty (read by the reader).
+// Default voices: the Narrator's, then unused ones; extras start empty (the reader)
 function autoCast(names) {
   const free = VOICES.map((v) => v.voice).filter((v) => !names.some((n) => DEFAULTS[n] === v))
   return Object.fromEntries(names.map((n) => [n, DEFAULTS[n] ?? free.shift() ?? '']))
 }
-const RING_ORB = 80 // px: the voice orbs in the ring and in the cards (and flying between them)
-const STEP = 116 // px between ring slots; also px of swipe per slot
+const RING_ORB = 80 // px, voice orbs
+const STEP = 116 // px per ring slot (and per swipe)
 
-// A copy of an orb glides from one element's spot to another's (Web Animations), then is removed.
+// Fly a copy of an orb between two elements
 function fly(fromRect, toRect, orb) {
   if (!fromRect || !toRect || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
   const size = RING_ORB
@@ -29,25 +28,22 @@ function fly(fromRect, toRect, orb) {
     { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished.finally(() => el.remove())
 }
 
-// Before each reading: who reads each character. Tap a voice orb in the ring, then a character's box (or the row
-// first, then the orb): the orb flies into the box. A voice is used once and leaves the ring; Reader (me) stays and
-// boxes get a copy. An empty box = the reader too. Start hands { character: voice | '' } to the reader page
-// ('' = the reader reads it, tracked by the mic). Not saved.
+// Before reading: a voice for each character. Start hands { character: voice | '' } ('' = the reader).
 export default function Cast({ id, onStart, onBack }) {
   const [boxes, setBoxes] = useState(null) // { character: voice | 'reader' | '' }
-  const [firstImg, setFirstImg] = useState({}) // { character: img of the first page they speak on }
-  const [faces, setFaces] = useState({}) // { character: cropped picture file } (Characters[].img)
-  const [pageImgs, setPageImgs] = useState([]) // every page's img, in order, for the cropper
-  const [cropping, setCropping] = useState(null) // character whose picture is being cropped
+  const [firstImg, setFirstImg] = useState({}) // first page they speak on
+  const [faces, setFaces] = useState({}) // cropped picture
+  const [pageImgs, setPageImgs] = useState([]) // for the cropper
+  const [cropping, setCropping] = useState(null)
   const [error, setError] = useState('')
   const [picked, setPicked] = useState(null) // { orb: voice key } | { row: character } | null
-  const [hidden, setHidden] = useState(new Set()) // 'box:<name>' / 'ring:<key>' while a copy flies there
-  const [rot, setRot] = useState(0) // ring position, in slots (the item at index rot is in the center)
+  const [hidden, setHidden] = useState(new Set()) // hidden while a copy flies there
+  const [rot, setRot] = useState(0) // ring position in slots
   const [dragging, setDragging] = useState(false)
   const boxRefs = useRef({})
   const orbRefs = useRef({})
   const ringRef = useRef(null)
-  const moved = useRef(false) // the last pointer down was a swipe, not a tap
+  const moved = useRef(false) // last pointer down was a swipe
 
   useEffect(() => {
     getJson(`/books/${id}`)
@@ -66,7 +62,7 @@ export default function Cast({ id, onStart, onBack }) {
   const placed = new Set(Object.values(boxes ?? {}))
   const ring = [READER, ...VOICES.filter((v) => !placed.has(v.voice))]
   const n = ring.length
-  useEffect(() => { setRot((r) => ((Math.round(r) % n) + n) % n) }, [n]) // an orb left or came back
+  useEffect(() => { setRot((r) => ((Math.round(r) % n) + n) % n) }, [n]) // orb count changed
 
   const hide = (key, on) => setHidden((h) => { const c = new Set(h); if (on) c.add(key); else c.delete(key); return c })
   const rectOf = (el) => el?.getBoundingClientRect()
@@ -77,7 +73,7 @@ export default function Cast({ id, onStart, onBack }) {
     narrator.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] preview failed:', e) })
   }
 
-  // Put orb `key` into `name`'s box; a voice already there flies back to the ring (swap).
+  // Put orb `key` in `name`'s box, swapping out any voice there
   function place(name, key) {
     const old = boxes[name]
     setPicked(null)
@@ -145,7 +141,7 @@ export default function Cast({ id, onStart, onBack }) {
     unlock() // Safari plays narration only after a tap
     unlockSounds() // and sound effects
     const cast = Object.fromEntries(Object.entries(boxes).map(([name, v]) => [name, v === READER.voice ? '' : v]))
-    onStart({ ...cast, Onomatopoeia: cast.Narrator }) // sound words are always read by whoever reads the Narrator
+    onStart({ ...cast, Onomatopoeia: cast.Narrator }) // Onomatopoeia follows the Narrator
   }
 
   return (
@@ -158,12 +154,12 @@ export default function Cast({ id, onStart, onBack }) {
       {error && <div className="alert alert-danger">Couldn't load book: {error}</div>}
       {!error && !boxes && <p>Loading...</p>}
 
-      {/* one card per character: their picture (tap to crop) on the left, the circle their voice goes in on the right */}
+      {/* one card per character */}
       {boxes && <div className="cast-cards">{Object.entries(boxes).map(([name, key]) => {
         const orb = key && orbOf(key)
         return (
           <div className={`cast-card${picked?.row === name ? ' picked' : ''}`} key={name}>
-            {name === 'Narrator' // not pictured in the book: a placeholder, nothing to crop
+            {name === 'Narrator' // no picture
               ? <span className="cast-face"><PersonSilhouette className="cast-page cast-silhouette" /><span className="cast-name">{name}</span></span>
               : <button type="button" className="cast-face" onClick={() => setCropping(name)}
                 aria-label={faces[name] ? `${name}'s picture. Tap to crop again` : `Crop a picture of ${name}`}>
@@ -173,7 +169,7 @@ export default function Cast({ id, onStart, onBack }) {
                 <span className="cast-name">{name}</span>
                 <span className="cast-face-badge" aria-hidden="true">{faces[name] ? '✎' : '✂'}</span>
               </button>}
-            {/* the whole side is the target; the circle is the focusable control (its click bubbles up here) */}
+            {/* the whole side is the target */}
             <div className="cast-voice" onClick={() => tapBox(name)}>
               <button type="button" ref={(el) => { boxRefs.current[name] = el }} className={`cast-box${orb ? ' filled' : ''}${picked?.orb ? ' ready' : ''}`}
                 aria-label={orb ? `${name}: ${orb.name}. Tap to ${picked?.orb ? 'swap' : 'remove'}` : `${name}: empty (Reader). Tap to place a voice`}>

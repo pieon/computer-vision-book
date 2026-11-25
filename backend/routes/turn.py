@@ -1,7 +1,4 @@
-"""The reader's page-turn routes. POST /turn: a photo of the open book -> which page it shows (ORB matching: the
-unwarped photo against the unwarped scans, then the photo as taken against its reading versions). POST /turn/decide: a 10-frame sheet -> ARC's
-decision model says if a page is being turned. POST /turn/sheet: save a sheet only, for review. Uses scan.py's unwarp
-model, timed() and version_paths()."""
+"""Page-turn routes: /turn (ORB page match), /turn/decide (decision model on a sheet), /turn/sheet (save only)."""
 import base64
 import functools
 import os
@@ -24,17 +21,14 @@ from backend.pipeline.unwarp.utils import IMG_SIZE
 from backend.routes.scan import device, model, report, timed, version_paths
 
 router = APIRouter()
-SHEET_DIR = os.path.join(ROOT, "output", "turn_sheets")  # every /turn/decide and /turn/sheet sheet, one folder per reading
-# a "page_turn" answer turns the page only this sure: below it most were not real flips (3 of 25 saved page_turn
-# sheets reached 0.9, 2026-11-19). ponytail: tune from the p in output/turn_sheets/ file names
+SHEET_DIR = os.path.join(ROOT, "output", "turn_sheets") # one folder per reading
+# a "page_turn" turns only this sure
+# ponytail: tune from the p in output/turn_sheets/ file names
 TURN_P = 0.65
 
 
 def page_after_turn(book_id, page, photo, times):
-    """Which page the photo shows, this one or the next (nothing saved): the unwarped photo against the unwarped scans
-    (_page_check); if that's unsure, the photo as taken against the pages' reading versions (version_check).
-    Returns (page, {page: counts}, version): version = the reading version's file name that decided, else None.
-    Fills `times` like add_page."""
+    """Which page the photo shows: the scans first, then reading versions if unsure. Returns (page, counts, version)."""
     with timed(times, "db_read"):
         doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
         pages = doc["book"][0]["Book"]["Pages"].values() if doc else []
@@ -56,14 +50,9 @@ def page_after_turn(book_id, page, photo, times):
 
 
 def sheet_decision(sheet, page, reading, times):
-    """Ask ARC's decision model if the 10-frame sheet (Book.jsx/camera.js frameSheet: 5x2 grid, numbered in time
-    order) shows a page being turned. Saves the sheet under output/turn_sheets/<reading>/ with the answer in its
-    name. {"choice": "page_turn" | "no_turn" | "unclear" (None on error), "page_turn": True only for "page_turn" with
-    p >= TURN_P,
-    "p": the choice's probability, "error", "saved"}; never raises, so a failed ARC call or "unclear" just means
-    "not turned" this round."""
-    # page_turn needs both the sweep and a different spread at the end: "a page lifts" or "the view changes" alone made
-    # it answer page_turn for hands holding pages, the book being moved, and blur (output/turn_sheets/, 2026-11-19)
+    """Ask the decision model whether the sheet shows a page turn; saves the sheet. Never raises.
+    Returns {choice, page_turn (sure turns only), p, error, saved}."""
+    # page_turn needs both the sweep and a changed spread, or hands and blur trigger it
     q = {"turn": {
     "type": "choice",
     "instructions": (
@@ -97,9 +86,8 @@ def sheet_decision(sheet, page, reading, times):
 
 
 def save_sheet(sheet, page, reading, label):
-    """Write a 10-frame sheet to output/turn_sheets/<reading>/<time>_p<page>_<label>.jpg; returns that path,
-    relative to the repo."""
-    # ponytail: sheets are kept forever (~100 KB each); delete output/turn_sheets/ when done looking
+    """Write a sheet to output/turn_sheets/<reading>/; returns its repo-relative path"""
+    # ponytail: sheets are kept forever (~100 KB each)
     folder = os.path.join(SHEET_DIR, re.sub(r"[^A-Za-z0-9_-]", "_", reading) or "no-reading")
     os.makedirs(folder, exist_ok=True)
     name = f"{datetime.now().strftime('%H-%M-%S-%f')[:-3]}_p{page + 1}_{label}.jpg"
@@ -128,10 +116,7 @@ def _fingerprint(path):
 
 
 def _page_check(photo_path, page_paths, page):
-    """Does the photo show this page or the next one? Per page {"inliers": RANSAC inliers of the ORB matches (features
-    that line up as one flat page, so a hand or a half-turned page scores low), "good": matches passing the ratio
-    test, "total": keypoints in that page's fingerprint}. Pages whose image file is missing are left out.
-    `page` if neither has 25+ inliers (no going back)."""
+    """This page or the next? Per page {inliers, good, total}; stays on `page` without 25+ inliers."""
     kp, des = _features(photo_path)
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
     scores = {}
@@ -150,17 +135,13 @@ def _page_check(photo_path, page_paths, page):
                                      np.float32([kp2[m.trainIdx].pt for m in good]), cv2.RANSAC, 5.0)
         scores[i]["inliers"] = int(mask.sum()) if mask is not None else 0
     best = max(scores, key=lambda i: scores[i]["inliers"], default=page)
-    # ponytail: fixed 25-inlier cutoff, tune from the scores in output/reading_logs/
+    # ponytail: fixed 25-inlier cutoff
     return (best if best in scores and scores[best]["inliers"] >= 25 else page), scores
 
 
 def version_check(photo_path, versions, page):
-    """The photo as taken (not unwarped) against the pages' reading versions (versions[i] = page i's, newest first,
-    scan.version_paths): cropped reading photos as taken, so a tilted, far-away book matches what the camera saw
-    then. Newest of both pages, then the next newest, ...; the first where a page reaches 25 inliers decides.
-    (page, scores, version file name), or None if none does."""
-    # ponytail: an unsure photo is checked against every version of both pages, so each reading that adds one makes
-    # unsure replies slower; try only the newest few (versions[i][:N]) if the ORB replies get slow
+    """The photo as taken against reading versions, newest first; the first with 25 inliers decides. None if none."""
+    # ponytail: every version is tried; limit to the newest few if replies get slow
     mine = [list(v) for v in versions]
     for k in range(max((len(mine[i]) for i in (page, page + 1) if i < len(mine)), default=0)):
         paths = [v[k] if k < len(v) else "" for v in mine]  # "": no k-th version, skipped like a missing file
@@ -172,10 +153,7 @@ def version_check(photo_path, versions, page):
 
 @router.post("/turn")
 async def turn(request: Request, book: str = Query(pattern=BOOK_ID), page: int = Query(ge=0), reading: str = ""):
-    """The reader saw the real book's page turn: POST a photo, get back which page it shows now.
-    Replies {"page": <index in Pages order>, "scores": {index: {inliers, good, total}}, "version": the extra
-    fingerprint version that matched (file name) or null when the scans did, "times": {step: seconds}};
-    times are also printed and written to the reading log."""
+    """POST a photo of the open book; replies {page, scores, version, times}"""
     times = {}
     with timed(times, "upload"):
         photo = await request.body()
@@ -193,9 +171,7 @@ async def turn(request: Request, book: str = Query(pattern=BOOK_ID), page: int =
 
 @router.post("/turn/decide")
 async def turn_decide(request: Request, book: str = Query(pattern=BOOK_ID), page: int = Query(ge=0), reading: str = ""):
-    """The reader's page-turn check (Book.jsx turns on "page_turn"): POST a 10-frame sheet JPEG, get the decision
-    model's {"choice": "page_turn" | "no_turn" | "unclear", "page_turn": bool, "p": probability, "error",
-    "saved": sheet path, "times": {step: seconds}}."""
+    """POST a 10-frame sheet; replies the decision model's {choice, page_turn, p, error, saved, times}"""
     times = {}
     with timed(times, "upload"):
         sheet = await request.body()
@@ -208,9 +184,7 @@ async def turn_decide(request: Request, book: str = Query(pattern=BOOK_ID), page
 @router.post("/turn/sheet")
 async def turn_sheet(request: Request, book: str = Query(pattern=BOOK_ID), page: int = Query(ge=0), reading: str = "",
                      motion: float = Query(0, ge=0, le=100), trigger: str = Query("motion", pattern=r"^[a-z]{1,20}$")):
-    """Save only (no model call): a 10-frame sheet the reader took while it waited for a page turn (Book.jsx
-    SAVE_SHEETS). `trigger` says what started it (e.g. "peak": centred on a motion peak) and goes in the file name,
-    with `motion` = that reading. Replies {"saved": path}."""
+    """Save a sheet only (no model call). Replies {"saved": path}."""
     sheet = await request.body()
     saved = await run_in_threadpool(save_sheet, sheet, page, reading, f"{trigger}_motion{motion:.0f}")
     reading_log.log(reading, "turn sheet", f"on page {page}, {trigger}, motion {motion:.1f} -> {saved}")

@@ -1,5 +1,4 @@
-"""Check that pages saved out of order end up in page order. Run from the repo root:
-python -m backend.routes.test_scan_order (needs MongoDB, not the VPN: no unwarp or OCR, just the DB step)."""
+"""Pages saved out of order end up in page order. Run: python -m backend.routes.test_scan_order (MongoDB only)"""
 from backend.db import books, deleted
 from backend.routes.scan import commit_page
 

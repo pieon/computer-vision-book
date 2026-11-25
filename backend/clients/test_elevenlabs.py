@@ -1,5 +1,4 @@
-"""Checks for ElevenLabs sound generation and its pipeline path, no network (client and LLM faked). Run from the repo
-root: python -m backend.clients.test_elevenlabs"""
+"""ElevenLabs checks, no network. Run: python -m backend.clients.test_elevenlabs"""
 import json
 import os
 import tempfile

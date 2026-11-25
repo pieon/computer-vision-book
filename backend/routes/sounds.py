@@ -1,7 +1,4 @@
-"""Sound effects (Freesound or ElevenLabs, backend/pipeline/book/sounds.py). POST /books/<id>/sounds picks sounds for a book's
-pages that have none (?all=true: every page again); POST / DELETE /books/<id>/pages/<key>/sounds...: Edit Book's
-review (pick a page again, remove one sound); GET /sounds/cues: the reader's fixed cue sounds;
-GET /sounds/file/<id>.mp3: a picked sound's preview, served from here so the app's Web Audio can play it (same origin)."""
+"""Sound effect routes: pick, review and remove page sounds; the reader's cues; serve sound files."""
 from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
@@ -26,8 +23,7 @@ def _page(book_id, key):
 
 @router.post("/books/{book_id}/sounds")
 async def pick_book_sounds(book_id: str = Path(pattern=BOOK_ID), all: bool = False):
-    """Pick sounds for every page without them (all=true: every page, replacing its sounds), one page after another
-    (Freesound allows 60 searches a minute). Waits until done; replies {"picked": number of pages}."""
+    """Pick sounds for pages without them (all=true: every page). Replies {"picked": n}."""
     doc = books.find_one({"_id": book_id}, {"book": 1})
     if not doc:
         raise HTTPException(404, "no such book")
@@ -49,8 +45,7 @@ async def pick_page_sounds(book_id: str = Path(pattern=BOOK_ID), key: str = Path
 
 @router.delete("/books/{book_id}/pages/{key}/sounds/{slot}")
 def remove_sound(book_id: str = Path(pattern=BOOK_ID), key: str = Path(pattern=PAGE_KEY), slot: str = Path(pattern=SLOT)):
-    """Edit Book's "Remove": drop the page's background ("setting") or a line's effect, and never pick that sound for
-    this book again (blockedSounds). Replies with the page's sounds."""
+    """Remove a page's background or a line's effect, and block that sound for this book"""
     path = f"book.0.Book.Pages.{key}.sounds"
     with lock:
         sounds = _page(book_id, key).get("sounds") or {"setting": None, "lines": {}}
@@ -70,10 +65,9 @@ async def cues():
 
 @router.get("/sounds/file/{sound_id}.mp3")
 async def sound_file(sound_id: str = Path(pattern=r"^([0-9]{1,12}|el[0-9a-f]{12})$")):
-    """A picked sound's preview MP3. Freesound's terms allow keeping copies only while needed: output/sfx/ is a cache,
-    safe to delete. ponytail: kept forever otherwise."""
+    """A picked sound's MP3 (output/sfx/ is a cache, safe to delete)"""
     try:
-        # by the id, not SOUND_SOURCE: a page's stored sounds play whichever source is switched on now
+        # by the id, not SOUND_SOURCE
         path = (elevenlabs.download(sound_id) if sound_id.startswith("el")
                 else await run_in_threadpool(freesound.download, int(sound_id)))
     except Exception as e:

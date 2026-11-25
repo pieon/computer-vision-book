@@ -1,5 +1,4 @@
-"""Checks for page sound picking, no network: both LLM calls and Freesound are faked. Run from the repo root:
-python -m backend.pipeline.book.test_sounds"""
+"""Page sound picking checks, no network. Run: python -m backend.pipeline.book.test_sounds"""
 import json
 
 from backend.clients import bedrock_gpt, freesound

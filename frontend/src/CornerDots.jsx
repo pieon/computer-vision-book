@@ -1,11 +1,9 @@
-// The Scanner's setup: four dots the user drags to the corners of the book. Outside the outline is shaded; each scan
-// photo is straightened to these corners on the server (scan.py straighten) before the unwarp, OCR and fingerprint.
-// Positions are {x, y} fractions of the view; the video and the photos are both mirrored (snap()), so they match.
+// Four dots dragged to the book's corners; the server straightens photos to them. {x, y} view fractions.
 export const CORNERS = [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.8, y: 0.8 }, { x: 0.2, y: 0.8 }]
 const NAMES = ['Top-left', 'Top-right', 'Bottom-right', 'Bottom-left']
 const clamp = (v) => Math.min(Math.max(v, 0), 1)
 
-// The corners' rows: the band the photo is cut to before upload (camera.js crop), and where motion is watched.
+// Rows spanned by the corners: the photo's cut band and motion area
 export const cornersBand = (corners) => ({ top: Math.min(...corners.map((c) => c.y)), bottom: Math.max(...corners.map((c) => c.y)) })
 
 export function CornerDots({ corners, setCorners, fixed }) {
@@ -25,7 +23,7 @@ export function CornerDots({ corners, setCorners, fixed }) {
           onPointerDown={(e) => { if (!fixed) e.currentTarget.setPointerCapture(e.pointerId) }}
           onPointerMove={(e) => {
             if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-            const view = e.currentTarget.parentElement.getBoundingClientRect() // the video fills it: view = frame
+            const view = e.currentTarget.parentElement.getBoundingClientRect() // view = frame
             move(i, (e.clientX - view.left) / view.width, (e.clientY - view.top) / view.height)
           }}
           onKeyDown={(e) => {

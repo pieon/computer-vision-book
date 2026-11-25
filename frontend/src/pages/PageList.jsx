@@ -4,18 +4,16 @@ import { FlagIcon, TrashIcon } from '../components/icons.jsx'
 import ScanProgress from '../components/ScanProgress.jsx'
 import { landed, scanning, useScanQueue } from '../scanQueue.js'
 
-// Edit Book: every page of a book as a row (scan thumbnail + page number); tap one to edit its lines (BookEditor.jsx),
-// drag it by its grip to another place, delete it, or scan more pages onto the end. Pages with a line whose speaker is "Unknown" are
-// flagged. Each change is saved right away (backend/routes/books.py reorder_pages / delete_page).
+// Edit Book: a row per page; tap to edit, drag to reorder, delete, or scan more. Saves right away.
 export default function PageList({ id, onBack, onOpen, onAdd }) {
-  const [book, setBook] = useState(null) // Book2 "Book" object
+  const [book, setBook] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [dragging, setDragging] = useState(null) // index of the page being dragged by its grip, or null
-  const [order, setOrder] = useState(null) // page keys while dragging / saving a new order; null = the book's order
-  useScanQueue() // re-render as added pages are prepared
-  const pagesIn = landed() // reload below only when one lands, not on every progress poll
-  // pages are placed by position as they upload, so moving or deleting meanwhile would put them in the wrong slot
+  const [dragging, setDragging] = useState(null) // page being dragged, or null
+  const [order, setOrder] = useState(null) // page keys while dragging / saving
+  useScanQueue()
+  const pagesIn = landed() // reload only when a page lands
+  // no moving or deleting while pages upload (they're placed by position)
   const uploading = scanning().includes(id)
 
   useEffect(() => {
@@ -27,7 +25,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
   if (!book) return <div className="container py-3">Loading...</div>
 
   const saved = Object.keys(book.Pages)
-  const pages = (order ?? saved).map((k) => [k, book.Pages[k]]) // [[key, page]] in book order (or as being dragged)
+  const pages = (order ?? saved).map((k) => [k, book.Pages[k]]) // [[key, page]]
   const locked = busy || uploading
   const unknown = pages.filter(([, p]) => p.text.some((l) => l.Character === 'Unknown')).length
 
@@ -41,7 +39,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
       setBusy(false)
     }
   }
-  // Save a new page order; the rows stay in it until the server replies (then the book has it), or go back if it fails.
+  // Save a new order; revert if it fails
   function saveOrder(keys) {
     if (keys.join() === saved.join()) return setOrder(null)
     setOrder(keys)
@@ -50,9 +48,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
   }
   const moved = (keys, i, to) => { const c = [...keys]; c.splice(to, 0, ...c.splice(i, 1)); return c }
 
-  // Dragging a page by its grip (far left), as Edit Book's lines (BookEditor.jsx): pointer events, since iPad Safari has
-  // no HTML drag and drop for touch. The row moves live to the row under the finger; the order is saved on release.
-  // Arrow keys on the grip move it one row and save.
+  // Drag a page by its grip (pointer events: iPad has no touch drag and drop); arrow keys move it one row
   function dragTo(e) {
     if (dragging === null) return
     const rows = [...e.currentTarget.closest('.editor').querySelectorAll('.pages-row')]
@@ -87,7 +83,7 @@ export default function PageList({ id, onBack, onOpen, onAdd }) {
   return (
     <div className="container py-3 editor">
       <div className="d-flex align-items-center gap-2 mb-3">
-        {/* the title comes from the cover's lines: edit page 1 to change it (backend/routes/books.py edit_page) */}
+        {/* title comes from the cover's lines */}
         <h1 className="h4 me-auto mb-0">{book.Name}</h1>
         <button type="button" className="btn btn-outline-light" onClick={onBack}>Back</button>
       </div>

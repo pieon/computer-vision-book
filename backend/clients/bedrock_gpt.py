@@ -10,9 +10,8 @@ MODEL = os.environ["BEDROCK_MODEL"]
 
 
 def chat(messages, seed=None, max_tokens=512):
-    """Send chat messages, get the reply text back (asked for as a JSON object). seed: same seed + same messages usually
-    gives the same reply (temperature can't be set: this model only takes the default). max_tokens includes the
-    model's reasoning, so a long input or choice needs more."""
+    """Chat messages in, reply text out (JSON). Same seed + messages usually gives the same reply.
+    max_tokens includes reasoning."""
     body = {"model": MODEL, "messages": messages, "max_completion_tokens": max_tokens,
             "response_format": {"type": "json_object"}}
     if seed is not None:

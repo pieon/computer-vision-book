@@ -1,5 +1,4 @@
-"""Turn a folder of book page images into Book2-style JSON: OCR each page, split it into
-lines, and assign each line to the Narrator or a character.
+"""Build Book2 JSON from page images: OCR, split into lines, assign speakers.
 Usage: python -m backend.pipeline.book.book_builder <img_folder> [--name "Title"] [--out book.json] [--characters Clara,Zoe]"""
 import argparse
 import json
@@ -8,12 +7,11 @@ import re
 
 from backend.pipeline.book.clean_ocr import QUOTES
 
-# "...", ". . .", "…" (and a 4th dot for sentence-ending ellipses), with any surrounding spaces
+# ellipsis forms, with surrounding spaces
 ELLIPSIS = re.compile(r"\s*(?:…|\.(?:\s?\.){2,3})\s*")
 
-# a "..." span, or a '...' span: opens at a ' after start/space/([ that is followed by a letter (not "Zoe's"),
-# and closes at the first ' NOT followed by a letter (so "I'm"/"don't" inside it don't close it); unclosed -> runs to the end
-# ponytail: a plural possessive inside single quotes ('the dogs' bones') closes it early; "rock 'n' roll" reads as a quote
+# a "..." or '...' span; an apostrophe inside a word doesn't close it
+# ponytail: 'the dogs' bones' closes early
 QUOTE = re.compile(r"""\"[^\"]*(?:\"|$)|(?<![^\s(\[])'(?=\w)(?:[^']|'(?=\w))*(?:'(?!\w)|$)""")
 
 ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
@@ -22,8 +20,7 @@ TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eight
 
 
 def normalize(text):
-    """Curly quotes -> straight, ellipses -> AP style: three periods with a space on each side.
-    A sentence-ending ellipsis keeps its period: "end. ... Next"."""
+    """Curly quotes -> straight; ellipses -> AP style (' ... ')"""
     text = text.translate(QUOTES)
     text = ELLIPSIS.sub(lambda m: ". ... " if m.group().count(".") == 4 else " ... ", text)
     text = re.sub(r" \.\.\. (?=[\"')\]](?!\w)|$)", " ...", text)  # no space before a closing quote/bracket
@@ -37,8 +34,7 @@ def number_word(n):
 
 
 def split_lines(text):
-    """Split page text into [(is_quote, line)]: each "..." or '...' span (QUOTE) is dialogue, text between is narration.
-    An unclosed quote (OCR cut off the page) runs to the end."""
+    """Split page text into [(is_quote, line)]; an unclosed quote runs to the end"""
     text = normalize(text)
     spans, at = [], 0
     for m in QUOTE.finditer(text):
@@ -48,22 +44,19 @@ def split_lines(text):
     return [(q, " ".join(s.split())) for q, s in spans if s.strip()]
 
 
-# a sentence ends at . ! or ? (optionally followed by a closing quote/bracket) and a space; not after "..." mid-sentence
-# (the char before the stop isn't a dot) and not after a title like "Mr."
-# ponytail: short title list; add abbreviations here if lines get cut after them
+# sentence end: . ! ? and a space, not after a mid-sentence "..." or a title
+# ponytail: short title list
 SENTENCE_END = re.compile(r"(?<=[^.\s][.!?])(?<!\bMr\.)(?<!\bMrs\.)(?<!\bMs\.)(?<!\bDr\.)(?<!\bSt\.)([\"')\]]?)\s+")
 
 
 def split_sentences(line):
-    """One line -> its sentences: 'Bram lived here. He was happy.' -> ['Bram lived here.', 'He was happy.']
-    Short lines make short narration clips, so each one's TTS starts sooner."""
+    """One line -> its sentences, so narration clips start sooner"""
     parts = SENTENCE_END.split(line)  # [sentence, closer, sentence, closer, ...]
     return [s + c for s, c in zip(parts[::2], parts[1::2] + [""]) if s.strip()]
 
 
 def tags(lines, i):
-    """Narration sentences that could be the speech tag of quote i: the first sentence after it
-    ("...," said Zoe.), then the last sentence before it if that ends in , or : (Zoe said, "...")."""
+    """Sentences that could be quote i's speech tag: the one after it, or the one before ending in , or :"""
     nxt = lines[i + 1] if i + 1 < len(lines) else (True, "")
     prv = lines[i - 1] if i > 0 else (True, "")
     if not nxt[0]:
@@ -80,16 +73,13 @@ def is_living(noun):
     from nltk.corpus import wordnet as wn  # one-time setup: python -c "import nltk; nltk.download('wordnet')"
 
     senses = wn.synsets(noun, pos="n")
-    # ponytail: first sense only ("honey" reads as food, not a pet name); check more senses if roles go missing
+    # ponytail: first WordNet sense only
     return bool(senses) and senses[0].lexname() in ("noun.person", "noun.animal")
 
 
 def tag_subject(sentence):
-    """Who is talking in a speech-tag sentence, from spaCy's dependency parse, whatever the verb:
-    the subject of the main verb ("Lisa said", "Lisa's mother was saying", "the artist wondered"), or its object
-    when the tag is inverted (spaCy parses "said Corduroy" with Corduroy as the object).
-    Names stay as written; a role noun becomes the noun ("her mother" -> "Mother").
-    None for pronouns (who "he" is needs the story) and things that can't talk ("The door slammed.")."""
+    """Who talks in a speech-tag sentence (spaCy parse): the main verb's subject, or its object when inverted.
+    Role nouns become names ("her mother" -> "Mother"); None for pronouns and things."""
     global _nlp
     if _nlp is None:
         import spacy  # loaded on first use: ~1 s
@@ -130,8 +120,7 @@ def tag_speaker(sentence, names):
 
 
 def continues(lines, i):
-    """True if quote i carries on the quote before a one-sentence tag: '"...," said Wilbur, "..."' or
-    '"..." she said. "..."'. Then both have the same speaker."""
+    """True if quote i continues the quote before a one-sentence tag (same speaker)"""
     return (i >= 2 and lines[i][0] and lines[i - 2][0] and not lines[i - 1][0]
             and len(re.split(r"(?<=[.!?])\s", lines[i - 1][1])) == 1)
 
@@ -147,8 +136,7 @@ def assign_speakers(lines, names):
         if not speakers[i] and continues(lines, i):
             speakers[i] = speakers[i - 2]
             continued.add(i)
-    # back-to-back quotes with no narration between them share a speaker, except a continued quote:
-    # in '"Oh!" she said. "Look!" "Hi," said Zoe.' the "Look!" is hers, not Zoe's
+    # back-to-back quotes share a speaker, except a continued quote
     for order in (range(1, len(lines)), range(len(lines) - 2, -1, -1)):
         for i in order:
             j = i - 1 if order.step == 1 else i + 1
@@ -158,23 +146,21 @@ def assign_speakers(lines, names):
 
 
 def rule_speakers(lines, names):
-    """The rules' answer for every line (assign_speakers), with a continued quote copying its first part and
-    "Unknown" where nothing fits. The fallback when the LLM can't answer."""
+    """Rule-based speaker per line, "Unknown" where nothing fits: the LLM fallback"""
     speakers = assign_speakers(lines, names)
-    for i, s in enumerate(speakers):  # in order, so a chain of continued quotes copies an already-filled speaker
+    for i, s in enumerate(speakers): # in order, so chains copy a filled speaker
         if s is None:
             speakers[i] = speakers[i - 2] if continues(lines, i) else "Unknown"
     return speakers
 
 
 def llm_speakers(lines, names, text, prev_text=""):
-    """Ask DeepSeek (ARC chat) who says each quote on the page, in one request. It sees the page as printed (its
-    line breaks show the paragraphs, so back-to-back replies can be told apart) and the previous page as context.
-    Returns {index: name} for the quotes it could place; None if the call or its reply failed."""
+    """Ask DeepSeek who says each quote on the page (previous page as context).
+    Returns {index: name}, or None on failure."""
     quotes = [i for i, (q, _) in enumerate(lines) if q]
     if not quotes:
         return {}
-    from backend.clients.arc import chat  # imported here so the rule-based parts work without .env/network
+    from backend.clients.arc import chat # imported here so the rules work offline
 
     numbered = "\n".join(f"{i}: {line}" for i, (_, line) in enumerate(lines))
     prompt = f"""You label who speaks each quote on one page of a children's picture book.
@@ -213,12 +199,11 @@ def build_page(img_name, text, names, prev_text=""):
     lines = split_lines(text)
     found = llm_speakers(lines, names, text, prev_text) or {}
     speakers = ["Narrator" if not q else found.get(i) for i, (q, _) in enumerate(lines)]
-    if None in speakers:  # LLM failed, or left some quotes out / said Unknown: the rules fill those in
+    if None in speakers: # the rules fill what the LLM missed
         print(f"  rule fallback for {img_name}: lines {[i for i, s in enumerate(speakers) if s is None]}")
         rules = rule_speakers(lines, names)
         speakers = [s or r for s, r in zip(speakers, rules)]
-    # a quote stays one line, however many sentences it has; narration is cut into sentences (each keeps the
-    # Narrator), so it's spoken one sentence at a time
+    # a quote stays one line; narration is split into sentences
     return {"img": img_name, "question": "",
             "text": [{"Reading": False, "Character": s, "Dialogue": sentence}
                      for s, (q, line) in zip(speakers, lines) for sentence in ([line] if q else split_sentences(line))]}
@@ -252,8 +237,7 @@ def cover_title(page):
 
 
 def book_json(name, pages, names, old=()):
-    """Wrap built pages in the Book2 structure; Characters = Narrator + names that actually speak.
-    old = the previous Characters, so a kept name keeps its face picture (img, set on the Cast screen)."""
+    """Wrap pages in the Book2 structure; Characters = Narrator + speakers (old keeps face pictures)"""
     imgs = {c["Name"]: c.get("img", "") for c in old}
     used = [s["Character"] for p in pages.values() for s in p["text"]]
     characters = ["Narrator"] + [n for n in dict.fromkeys(names + used) if n in used and n != "Narrator"]
@@ -312,14 +296,13 @@ if __name__ == "__main__":
     assert assign_speakers(split_lines('"Oh!" Lisa said. "Look!" "Hi," said Zoe.'), ["Lisa", "Zoe"]) == \
         ["Lisa", "Narrator", "Lisa", "Zoe", "Narrator"]
     assert assign_speakers(split_lines('"Oh!" she said. "Look!" "Hi," said Zoe.'), ["Zoe"])[2] is None
-    # DeepSeek decides the quotes; names are matched to the known spelling; what it leaves out or calls Unknown,
-    # or everything if the call fails, comes from the rules
+    # DeepSeek decides the quotes; the rules fill the rest
     page = '"Want to play?" asked Clara.\n"Sure!"\n"Hi," said Zoe.'
     arc.chat = lambda prompt: '```json\n{"0": "clara", "2": "Zoe", "3": "Unknown"}\n```'
     assert [l["Character"] for l in build_page("p.png", page, n)["text"]] == ["Clara", "Narrator", "Zoe", "Zoe", "Narrator"]
     arc.chat = lambda prompt: '{"0": "Clara", "2": "Manager"}'
     assert [l["Character"] for l in build_page("p.png", page, n)["text"]][2] == "Manager"  # a speaker not in the list
-    arc.chat = offline  # the rules alone give Clara's back-to-back reply to Clara too: why DeepSeek decides first
+    arc.chat = offline # rules alone: Clara's reply goes to Clara
     assert [l["Character"] for l in build_page("p.png", page, n)["text"]] == ["Clara", "Narrator", "Clara", "Zoe", "Narrator"]
     arc.chat = lambda prompt: "no idea"
     assert [l["Character"] for l in build_page("p.png", '"Who?" She looked.', n)["text"]] == ["Unknown", "Narrator"]

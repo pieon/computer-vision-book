@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { cancel, enqueue, fraction, MAX_IN_FLIGHT, progress, scanning, WEIGHTS } from './scanQueue.js'
 
-// fetch that answers after `ms`; `fail(n, attempt)` says whether that call fails. Records calls and peak concurrency.
+// Fake fetch: answers after `ms`; records calls and peak concurrency
 function fakeFetch(ms, fail = () => false) {
   const calls = []
   const stats = { inFlight: 0, peak: 0 }
@@ -34,7 +34,7 @@ test('sends right away, several at once, each with its own page number', async (
   const { calls, stats } = fakeFetch(20, (n, attempt) => (n === 1 && attempt === 1) || n === 2) // 1: retried; 2: fails twice
   const results = {}
   for (let n = 0; n < 6; n++) enqueue('bookA', n, `photo${n}`, (reply) => { results[n] = reply ? 'ok' : 'failed' })
-  expect(calls).toEqual([0, 1, 2, 3]) // first MAX_IN_FLIGHT sent immediately, without waiting for replies
+  expect(calls).toEqual([0, 1, 2, 3]) // MAX_IN_FLIGHT sent at once
   expect(scanning()).toEqual(['bookA'])
   await vi.waitFor(() => expect(Object.keys(results)).toHaveLength(6), { timeout: 2000 })
   expect(stats.peak).toBe(MAX_IN_FLIGHT)
@@ -65,7 +65,7 @@ test('one limit across books, and a new book\'s cover goes first', async () => {
   expect(stats.urls.slice(-4)).toEqual(['bookC/1', 'bookC/2', 'bookC/3', 'bookC/4'])
   await vi.waitFor(() => expect(scanning()).toEqual([]), { timeout: 2000 })
   const sent = stats.urls.slice(-9)
-  expect(sent[4]).toBe('bookD/0') // the first free slot goes to the cover, ahead of bookC's waiting pages
+  expect(sent[4]).toBe('bookD/0') // the cover takes the first free slot
   expect(sent.at(-1)).toBe('bookD/1') // other pages keep their place in line
   expect(stats.peak).toBe(MAX_IN_FLIGHT) // never more than the limit across both books
 })

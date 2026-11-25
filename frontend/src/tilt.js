@@ -1,16 +1,12 @@
-// Which way to turn a back-camera photo so the book is upright (Scanner): a phone may be held sideways over the book
-// with the screen not turning with it (rotation lock), or laid flat after being turned. Camera frames come in the
-// screen's orientation, so the photo needs turning by how far the device is turned from the screen.
+// How far to turn a back-camera photo so the book is upright, from the device's tilt
 
-const FLAT = 0.35 // below this much sideways gravity (1 = upright) the device is too flat to tell its rotation
+const FLAT = 0.35 // sideways gravity below this: too flat to tell
 
-// Degrees clockwise (0, 90, 180, 270) to turn a photo, from deviceorientation beta / gamma (degrees) and
-// screen.orientation.angle (degrees counter-clockwise, as browsers report it); null when the device is too flat to
-// tell, so the caller keeps its last reading.
+// Degrees clockwise to turn a photo, from beta / gamma and the screen angle; null when too flat
 export function turnFor(beta, gamma, screenAngle = 0) {
   const b = (beta * Math.PI) / 180
   const g = (gamma * Math.PI) / 180
-  const gx = Math.cos(b) * Math.sin(g) // gravity in device coordinates: x to the right edge, y to the top edge
+  const gx = Math.cos(b) * Math.sin(g) // gravity in device coordinates
   const gy = -Math.sin(b)
   if (Math.hypot(gx, gy) < FLAT) return null
   const device = (Math.round((Math.atan2(gx, -gy) * 180) / Math.PI / 90) * 90 + 360) % 360 // clockwise from upright
@@ -18,14 +14,14 @@ export function turnFor(beta, gamma, screenAngle = 0) {
   return (device - screen + 360) % 360
 }
 
-// Ask for motion access (iOS: only from a tap; elsewhere there's nothing to ask). Resolves true if allowed.
+// Ask for motion access (iOS: only from a tap). Resolves true if allowed.
 export function requestTurn() {
   const ask = window.DeviceOrientationEvent?.requestPermission
   if (!ask) return Promise.resolve(true)
   return ask().then((r) => r === 'granted', () => false)
 }
 
-// Call onTurn(degrees) whenever the turn a photo needs changes; flat readings are skipped. Returns a stop function.
+// onTurn(degrees) when the needed turn changes. Returns stop.
 export function watchTurn(onTurn) {
   let last = null
   const on = (e) => {

@@ -1,5 +1,4 @@
-"""Flip+unwarp data/test_img/ -> output/, then build the book JSON from it. Run from the repo root:
-python -m scripts.build_book"""
+"""Flip + unwarp data/test_img/ -> output/, then build the book JSON. Run: python -m scripts.build_book"""
 import json
 import os
 

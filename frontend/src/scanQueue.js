@@ -1,22 +1,16 @@
-// Scanned photos upload in the background, several at once, and keep going after the Scanner closes, so the Library
-// can show a progress bar: each page is OCR'd, then its sounds and narrator clips are made on the server
-// (pipeline/book/sounds.py prepare_later), which this polls (GET /books/<id>/progress) until the book is ready. Each photo is sent with its page position (`n`, 0 = cover), so pages land in the
-// right place whatever order they finish in (backend/routes/scan.py add_page). A failed upload is retried once, then
-// counted as failed; its page stays empty and the pages after it keep their places.
-// ponytail: in memory only, so reloading the page drops photos not uploaded yet; persist them if that bites
+// Background photo uploads, several at once; polls /books/<id>/progress until each book is ready.
+// ponytail: in memory only; a reload drops unsent photos
 import { useSyncExternalStore } from 'react'
 import { getJson, request } from './api.js'
 
-// At most this many uploads at once across all books: the browser opens only 6 connections to the server (HTTP/1.1
-// through the Vite proxy), so 2 stay free for /books, /images and /stats. Also keeps ARC from being flooded.
+// Uploads at once across books (the browser allows 6 connections; 2 stay free)
 export const MAX_IN_FLIGHT = 4
 
-// A page's steps, weighted by about how long each takes (median seconds, measured 2026-11-25), so the bar moves evenly
+// Step weights, about their median seconds (2026-11-25)
 export const WEIGHTS = { text: 9, sounds: 8, voice: 7 }
-const STALL_MS = 120_000 // nothing moved this long after the uploads: show the book anyway (a step failed for good)
+const STALL_MS = 120_000 // no progress this long: show the book anyway
 
-// How much of a scan is done, 0..1. ns: the page positions sent; failed: those whose upload failed (count as done);
-// status: the server's { n: { text, sounds, voice: [clips made, narrator lines] } }.
+// Fraction done, 0..1; failed uploads count as done
 export function fraction(ns, failed, status) {
   const all = WEIGHTS.text + WEIGHTS.sounds + WEIGHTS.voice
   let sum = 0
@@ -28,10 +22,9 @@ export function fraction(ns, failed, status) {
   return ns.length ? sum / (ns.length * all) : 0
 }
 
-// bookId -> { total, done, failed, cancelled, uploads: Set<AbortController>, ns (positions sent), failedNs,
-//             status (last /progress reply), fraction, ready, stalled, changedAt }
+// bookId -> upload and progress state
 const books = new Map()
-let waiting = [] // { bookId, start }, sent in order; covers go first so a new book's Library tile fills in quickly
+let waiting = [] // { bookId, start }; covers first
 let running = 0
 const listeners = new Set()
 let version = 0
@@ -46,20 +39,19 @@ export const useScanQueue = () => useSyncExternalStore(
   () => version,
 )
 
-// { total, done, failed, fraction, ready, stalled } for a book that was scanned in this tab, else undefined
+// Progress of a book scanned in this tab
 export function progress(bookId) {
   const b = books.get(bookId)
   return b && { total: b.total, done: b.done, failed: b.failed, fraction: b.fraction, ready: b.ready, stalled: b.stalled }
 }
 
-// Changes only when a page lands in a book or a book becomes ready (not on every progress poll): a dependency for
-// reloading books from the server.
+// Changes when a page lands or a book is ready: a reload key
 export const landed = () => [...books].map(([id, b]) => `${id}:${b.done}:${b.ready}`).join()
 
 // ids of books still uploading or being prepared (OCR, sounds, narrator clips)
 export const scanning = () => [...books].filter(([, b]) => !b.ready).map(([id]) => id)
 
-// Ask the server how far each unready book is; once a second while any is unready.
+// Poll unready books once a second
 let polling = null
 function poll() {
   const open = [...books].filter(([, b]) => !b.ready)
@@ -101,9 +93,7 @@ function pump() {
   }
 }
 
-// Send photo `n` of this book now (or as soon as one of the MAX_IN_FLIGHT slots frees up).
-// corners: the book's corners in the photo, [x, y] x4 as fractions (Scanner's dots), or null.
-// onResult(reply, error, sentAt) runs when it's done (not if the book was cancelled); sentAt = when its upload started.
+// Send photo `n` when a slot frees. corners: [x, y] x4 fractions, or null.
 export function enqueue(bookId, n, blob, onResult, corners = null) {
   let b = books.get(bookId)
   if (!b) books.set(bookId, (b = { total: 0, done: 0, failed: 0, cancelled: false, uploads: new Set(), ns: [], failedNs: new Set(), fraction: 0, ready: false }))
@@ -131,7 +121,7 @@ export function enqueue(bookId, n, blob, onResult, corners = null) {
       b.uploads.delete(upload)
     }
     changed()
-    poll() // the page's text is in: show it now, not at the next tick
+    poll() // show the text now
   }
   const job = { bookId, start }
   if (n === 0) waiting.unshift(job)
@@ -139,8 +129,7 @@ export function enqueue(bookId, n, blob, onResult, corners = null) {
   pump()
 }
 
-// Stop a book's uploads right away: photos not sent yet are dropped and the ones in flight are aborted. The server may
-// still finish a page it already started; DELETE /books/<id> makes it drop that page (backend/routes/scan.py).
+// Stop a book's uploads now; DELETE /books/<id> drops late pages
 export function cancel(bookId) {
   const b = books.get(bookId)
   if (!b) return

@@ -1,7 +1,4 @@
-// The voice agents' orbs: picked per character in Cast (pages/Cast.jsx), lined up in the reader (pages/Book.jsx).
-// Styles: .cast-orb* in index.css.
-// CA's mates (CA/src/Book/Roles.js): a Gemini prebuilt voice each, and a color and body for its orb: shape is a
-// border-radius, w its width relative to its height
+// Voice agent orbs: a Gemini voice, color and shape each (shape = border-radius, w = width / height)
 export const VOICES = [
   { name: 'Orange Opal', voice: 'Aoede', color: '#ff9f43', shape: '28%' }, // rounded square
   { name: 'Green Grant', voice: 'Umbriel', color: '#2ecc71', shape: '64% 36% 58% 42% / 48% 62% 38% 52%' }, // blob
@@ -11,8 +8,8 @@ export const VOICES = [
   { name: 'Ruby Randy', voice: 'Iapetus', color: '#e74c3c', shape: '6% 64%' }, // leaf
   { name: 'Coral Carly', voice: 'Kore', color: '#ff7f6e', shape: '50%', w: 0.78 }, // tall egg
 ]
-export const READER = { name: 'Reader (me)', voice: 'reader', color: '#f5f5f5', shape: '50%' } // never leaves the ring; boxes get a copy
-// orb body: color, size, shape, and a different blink moment per voice so they don't all blink together
+export const READER = { name: 'Reader (me)', voice: 'reader', color: '#f5f5f5', shape: '50%' } // never leaves the ring
+// blink offset per voice, so they don't blink together
 export const orbStyle = (orb, size) => `--c:${orb.color};--s:${size}px;--r:${orb.shape};--w:${orb.w ?? 1};--d:${(VOICES.indexOf(orb) + 1) * 0.7}s`
 export const orbOf = (key) => (key === READER.voice ? READER : VOICES.find((v) => v.voice === key))
 

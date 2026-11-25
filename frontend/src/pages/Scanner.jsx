@@ -5,49 +5,42 @@ import { FULL, snap, startCamera, watchMotion } from '../camera.js'
 import { cancel as cancelUploads, enqueue } from '../scanQueue.js'
 import { requestTurn, watchTurn } from '../tilt.js'
 
-const SETTLE_MS = 2000 // the page must be still (motion under `still`) this long before the photo; was 1000, too quick
-// Motion (% of pixels changed between checks, shown in the status line while scanning) per camera: above `turn` a page
-// is being turned; below `still` it's still. The back camera is usually held in a hand, which shakes, so its levels
-// are higher; the front camera stands still. ponytail: back levels are a guess, tune from the status line's motion %
+const SETTLE_MS = 2000 // still this long before the photo
+// Motion % per camera: above `turn` = turning, below `still` = still
+// ponytail: back levels are a guess; tune from the status line
 const MOTION = { front: { turn: 12, still: 8 }, back: { turn: 30, still: 22 } }
-const STEPS = [ // what to do next, by how many photos are taken
+const STEPS = [ // next step, by photos taken
   'Scan the front cover of the book.',
   'Open to the first page where the story begins.',
   'Turn to the next page, or tap Done to finish.',
 ]
 
-// Which camera scans, kept per device. Front: the iPad stands facing the reader, so the book is small and tilted in the
-// frame and the user marks its corners. Back: the iPad is held over the book, which fills the frame: no corners.
+// Which camera scans, kept per device (front: mark corners; back: full frame)
 const loadFacing = () => { try { return localStorage.getItem('scanCamera') === 'back' ? 'back' : 'front' } catch { return 'front' } }
 const saveFacing = (f) => { try { localStorage.setItem('scanCamera', f) } catch { /* private mode: not remembered */ } }
 
-// start: the first page position to fill. 0 = a new book (cover first); > 0 = adding pages to the end of a book.
-// First the setup: the user picks the camera, and with the front one drags four dots to the corners of the book, and
-// confirms. Then (front camera) every photo is cut to the corners' rows before it's sent, with the corners, and the
-// server straightens the book out of it (scan.py straighten), so the table and lap never reach the unwarp, OCR or the
-// page fingerprints. With the back camera the whole frame is sent, not mirrored, and turned
-// upright when the device is held turned from its screen (tilt.js).
+// start: first page position (0 = new book). Front: photos cut to the marked corners; back: full frame, turned upright.
 export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
   const videoRef = useRef(null)
-  const needTurn = useRef(false) // a page was taken: wait for the next turn before the next photo
+  const needTurn = useRef(false) // wait for the next turn
   const [status, setStatus] = useState('Starting camera...')
   const [ready, setReady] = useState(false)
   const [motion, setMotion] = useState(0)
   const [toast, setToast] = useState('')
-  const [taken, setTaken] = useState([]) // labels of the photos taken, in order
+  const [taken, setTaken] = useState([]) // photo labels
   const [ratio, setRatio] = useState(4 / 3)
-  const [phase, setPhase] = useState('setup') // 'setup': choosing the camera, placing the corner dots; 'scan': taking photos
+  const [phase, setPhase] = useState('setup') // 'setup' | 'scan'
   const [facing, setFacing] = useState(loadFacing) // 'front' | 'back'
   const front = facing === 'front'
-  const [corners, setCorners] = useState(CORNERS) // the book's corners, fractions of the frame (front camera only)
-  const band = front ? cornersBand(corners) : FULL // the photo is cut to these rows before upload
-  // the corners as fractions of that cut photo, "x,y" x4, for /scan; none with the back camera
+  const [corners, setCorners] = useState(CORNERS) // frame fractions (front only)
+  const band = front ? cornersBand(corners) : FULL // rows the photo is cut to
+  // corners in the cut photo, for /scan
   const inBand = front ? corners.flatMap((c) => [c.x, (c.y - band.top) / (band.bottom - band.top || 1)]) : null
-  // back camera: degrees clockwise to turn each photo so the book is upright (tilt.js); null = motion access refused
+  // back camera: clockwise turn to keep the book upright; null = motion refused
   const [turn, setTurn] = useState(0)
   const turnRef = useRef(0)
 
-  // Motion access needs a tap on iOS: asked when the back camera is picked, and again on Confirm
+  // iOS motion access needs a tap
   const askTurn = () => requestTurn().then((ok) => { if (!ok) setTurn(null) })
   useEffect(() => {
     if (front) return
@@ -63,8 +56,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     setStatus('Starting camera...')
   }
 
-  // Start the chosen camera; stop it when it changes or the component unmounts. The view box follows the frames' shape,
-  // which changes when the device rotates (iOS swaps the frames' width and height), so it's tracked, not read once.
+  // Start the chosen camera; track the frame shape (it changes on rotation)
   useEffect(() => {
     const video = videoRef.current
     const onResize = () => {
@@ -88,9 +80,8 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     }
   }, [front])
 
-  // A photo is sent right away in the background (scanQueue.js, several at once), so the camera is free for the next
-  // page and processing carries on after Done.
-  const count = useRef(start) // next page position, for labels (state updates lag behind)
+  // Photos upload in the background (scanQueue.js)
+  const count = useRef(start) // next page position
   function add(photo, t, cut) {
     URL.revokeObjectURL(photo.url)
     const i = count.current++
@@ -100,17 +91,15 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     setTimeout(() => setToast(''), 1500)
     const takenAt = performance.now()
     enqueue(bookId, i, photo.blob, (reply, err, sentAt) => {
-      // where the time went (timing() in api.js); queued = waiting for a free upload slot
+      // queued = waiting for an upload slot
       if (reply) {
         console.log('[scan]', label, `-> ${reply.page} (${Math.round(photo.blob.size / 1024)} KB) |`,
           timing({ ...t, queued: sentAt - takenAt }, reply.times, performance.now() - sentAt))
-      } else console.log('[scan]', label, 'failed twice:', err) // the backend prints its step times
+      } else console.log('[scan]', label, 'failed twice:', err)
     }, cut)
   }
 
-  // Cancel scanning: leave right away and drop this book from the DB (JSON and page images) in the background; the
-  // server drops pages still processing for it (backend/routes/scan.py). If that fails the book shows in the Library.
-  // Adding to an existing book: just stop; photos not uploaded yet are dropped, pages already saved stay.
+  // Cancel: leave now and delete a new book in the background; adding pages just stops
   function cancel() {
     const n = taken.length
     if (start) {
@@ -124,14 +113,13 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
     onCancel()
   }
 
-  // Auto-capture: wait for motion (page turn) inside the band, then snap once it has been still for SETTLE_MS.
-  // Only while scanning; the band can't change then.
+  // Auto-capture: after a page turn, snap once still for SETTLE_MS
   useEffect(() => {
     if (!ready || phase !== 'scan') return
     const { turn: turning, still } = MOTION[facing]
     const video = videoRef.current
     let moving = !needTurn.current
-    let movedAt = moving ? performance.now() : null // first motion, for the [scan] stage times
+    let movedAt = moving ? performance.now() : null // for stage times
     let stillSince = null
     return watchMotion(video, (score) => {
       setMotion(score)
@@ -146,7 +134,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
           moving = false
           needTurn.current = true
           const snapAt = performance.now()
-          // flip: first motion -> settling began; settle: the still wait; snap: photo encode
+          // flip / settle / snap times
           const t = { flip: stillSince - movedAt, settle: snapAt - stillSince }
           movedAt = null
           snap(video, (p) => add(p, { ...t, snap: performance.now() - snapAt }, inBand),
@@ -154,7 +142,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
         }
       }
     }, band)
-  }, [ready, phase, ratio]) // eslint-disable-line react-hooks/exhaustive-deps -- ratio: a rotation restarts the motion watch at the new shape; the camera and corners are fixed while scanning; add only uses refs, setters and bookId
+  }, [ready, phase, ratio]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const last = taken.at(-1)
   const setup = phase === 'setup'
@@ -173,11 +161,11 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
 
       <div className="scan-stage">
         <div className="scan-view">
-          <video ref={videoRef} className={front ? '' : 'unmirrored'} autoPlay playsInline muted /* front: mirrored in CSS, same as snap() */ />
-          {/* outside the corners is darker: that part of the frame is cut off every photo */}
+          <video ref={videoRef} className={front ? '' : 'unmirrored'} autoPlay playsInline muted />
+          {/* darkened outside the corners */}
           {ready && front && <CornerDots corners={corners} setCorners={setCorners} fixed={!setup} />}
           {taken.length > 0 && <div className="scan-flash" key={`flash${taken.length}`} />}
-          <section className="scan-guide" aria-live="polite" key={`${phase}${taken.length}`} /* re-keyed so each message fades in */>
+          <section className="scan-guide" aria-live="polite" key={`${phase}${taken.length}`} /* re-keyed to fade in */>
             <p className="scan-guide-text">{guide}</p>
           </section>
         </div>
@@ -185,7 +173,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
 
       <div className="scan-controls">
         <button type="button" className="scan-cancel" onClick={cancel}>Cancel</button>
-        {/* photos are taken automatically once the page is still; the camera can only change before that */}
+        {/* camera can change only before scanning */}
         {setup ? (
           <div className="scan-camera" role="group" aria-label="Camera">
             {[['front', 'Front'], ['back', 'Back']].map(([f, name]) => (
@@ -195,7 +183,7 @@ export default function Scanner({ bookId, start = 0, onDone, onCancel }) {
         ) : <div />}
         {setup
           ? <button type="button" className="scan-done" disabled={!ready} onClick={() => { if (!front) askTurn(); setPhase('scan') }}>Confirm</button>
-          /* pages still processing carry on in the background; the Library shows how many are ready */
+          /* processing carries on in the background */
           : <button type="button" className="scan-done" disabled={taken.length < (start ? 1 : 2)} onClick={onDone}>Done</button>}
       </div>
 

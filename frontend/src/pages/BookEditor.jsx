@@ -5,11 +5,10 @@ import { PauseIcon, PlayIcon, TrashIcon } from '../components/icons.jsx'
 const NEW = '\u0000new' // speaker <select> value for "+ New character…"
 const lines = (page) => page.text.map(({ Character, Dialogue }) => ({ Character, Dialogue }))
 
-// The page's sound effects (picked from Freesound at scan time, backend/pipeline/book/sounds.py) to review: play each,
-// remove one that doesn't fit (it's never picked for this book again), or pick the page's sounds again.
+// Review the page's sounds: play, remove (never picked again), or pick again
 function PageSounds({ id, pageKey, page, onChange }) {
   const [busy, setBusy] = useState(false)
-  const [playing, setPlaying] = useState(null) // id of the sound previewing now
+  const [playing, setPlaying] = useState(null) // previewing now
   const audio = useRef(null)
   useEffect(() => () => audio.current?.pause(), [])
   const sounds = page.sounds ?? { setting: null, lines: {} }
@@ -21,7 +20,7 @@ function PageSounds({ id, pageKey, page, onChange }) {
     audio.current?.pause()
     setPlaying(null)
   }
-  // Play / Pause: one preview at a time; playing another stops the last
+  // one preview at a time
   function toggle(sound) {
     if (playing === sound.id) return stop()
     stop()
@@ -70,16 +69,14 @@ function PageSounds({ id, pageKey, page, onChange }) {
   )
 }
 
-// Edit one page's lines (opened from the Pages list, PageList.jsx): its photo and lines; fix each line's text and who
-// says it, add/delete/reorder lines. Saves with PUT /books/<id>/pages/<key> (backend/routes/books.py edit_page);
-// Back saves first. Other pages are reached from the Pages list, not from here.
+// Edit one page's lines: text, speaker, add / delete / reorder. Back saves first.
 export default function BookEditor({ id, index, onBack }) {
-  const [book, setBook] = useState(null) // Book2 "Book" object
+  const [book, setBook] = useState(null)
   const [error, setError] = useState('')
-  const [draft, setDraft] = useState([]) // this page's lines being edited: [{Character, Dialogue}]
+  const [draft, setDraft] = useState([]) // [{Character, Dialogue}]
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [dragging, setDragging] = useState(null) // index of the line being dragged by its grip, or null
+  const [dragging, setDragging] = useState(null) // line being dragged, or null
 
   useEffect(() => {
     getJson(`/books/${id}`)
@@ -91,7 +88,7 @@ export default function BookEditor({ id, index, onBack }) {
     <button type="button" className="btn btn-outline-light" onClick={onBack}>Back</button></div>
   if (!book) return <div className="container py-3">Loading...</div>
 
-  const pages = Object.entries(book.Pages) // [[key, page]] in book order, like the reader
+  const pages = Object.entries(book.Pages) // [[key, page]]
   const [key, page] = pages[index]
   const speakers = [...new Set(['Narrator', 'Onomatopoeia', ...book.Characters.map((c) => c.Name), ...draft.map((l) => l.Character)])]
 
@@ -102,8 +99,7 @@ export default function BookEditor({ id, index, onBack }) {
   const setLine = (i, field, value) => change((d) => d.map((l, j) => (j === i ? { ...l, [field]: value } : l)))
   const move = (i, to) => change((d) => { const c = [...d]; c.splice(to, 0, ...c.splice(i, 1)); return c })
 
-  // Dragging a line by its grip (far left): pointer events, since iPad Safari has no HTML drag and drop for touch. The
-  // line moves live to the row under the finger; arrow keys on the grip move it one row.
+  // Drag a line by its grip (pointer events: iPad has no touch drag and drop); arrow keys move it one row
   function dragTo(e) {
     if (dragging === null) return
     const rows = [...e.currentTarget.closest('.editor').querySelectorAll('.editor-line')]
@@ -122,12 +118,12 @@ export default function BookEditor({ id, index, onBack }) {
     if (name) setLine(i, 'Character', name.slice(0, 40))
   }
 
-  // Save this page if changed; false if it failed (then stay on the page).
+  // Save if changed; false if it failed
   async function save() {
     if (!dirty) return true
     setSaving(true)
     try {
-      const text = draft.filter((l) => l.Dialogue.trim()) // empty lines are dropped
+      const text = draft.filter((l) => l.Dialogue.trim()) // drop empty lines
       const saved = await request(`/books/${id}/pages/${key}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
       })

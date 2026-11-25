@@ -1,5 +1,4 @@
-"""Book scanner backend: wires the routes together. Run from the repo root: python -m backend
-(frontend/vite.config.js proxies /scan, /books, /images and /stats here). Each feature is one module in routes/."""
+"""Book scanner backend. Run from the repo root: python -m backend"""
 import os
 
 from fastapi import FastAPI
@@ -13,6 +12,6 @@ for feature in (scan, turn, books, sounds, stats, listen, tts, question_acknowle
     app.include_router(feature.router)
 
 os.makedirs(IMG_DIR, exist_ok=True)
-# page images by URL, e.g. /images/<id>/page_001.png (the library uses page 1 as the cover); StaticFiles blocks ../
-# ponytail: full-size PNG as the cover; serve small thumbnails if the library gets slow with many books
+# page images, e.g. /images/<id>/page_001.png
+# ponytail: full-size PNG covers; serve thumbnails if the library gets slow
 app.mount("/images", StaticFiles(directory=IMG_DIR), name="images")

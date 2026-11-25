@@ -1,7 +1,5 @@
-"""Freesound (https://freesound.org/docs/api/): search sound effects and background loops by keyword. Needs
-FREESOUND_TOKEN in .env (an API key from https://freesound.org/apiv2/apply; enough for search and preview MP3s).
-Free API use is non-commercial only, and each sound's creator must be credited per its licence, so every result keeps
-its name, creator and licence. Searches are cached in Mongo (db.sounds), so a keyword is searched once ever."""
+"""Freesound search for effects and loops. Needs FREESOUND_TOKEN. Non-commercial; credit each sound's
+creator per its licence. Searches are cached in db.sounds."""
 import json
 import os
 import threading
@@ -14,10 +12,10 @@ from backend.config import ROOT  # also loads .env
 from backend.db import db
 
 URL = "https://freesound.org/apiv2/search/"
-# the only difference between the kinds: how long a clip may be. effect = one-off (a knock), loop = a long recording
+# max clip length per kind
 # played on repeat under the page (waves)
 FILTERS = {"effect": "duration:[0.3 TO 4]", "loop": "duration:[10 TO 120]"}
-GAP = 1.1  # s between searches: Freesound allows 60 a minute (and 2000 a day)
+GAP = 1.1 # s between searches (60 a minute allowed)
 FILE_DIR = os.path.join(ROOT, "output", "sfx")  # downloaded preview MP3s, served by routes/sounds.py
 cache = db.sounds  # {_id: "<kind>|<keyword>", candidates: [...] (empty: nothing found)}
 _lock = threading.Lock()
@@ -25,13 +23,12 @@ _last = 0.0
 
 
 def _search(keyword, kind):
-    """Freesound's top 10 results by relevance, each {keyword, id, name, user, license, url (preview MP3), duration,
-    tags (first 8), description (first 150 chars)}: what the sound-choosing LLM sees (pipeline/book/sounds.py)."""
+    """Top 10 results, with the fields the choosing LLM sees"""
     global _last
     query = urllib.parse.urlencode({"query": keyword, "filter": FILTERS[kind], "page_size": 10,
                                     "fields": "id,name,username,license,duration,previews,tags,description"})
     req = urllib.request.Request(f"{URL}?{query}", headers={"Authorization": f"Token {os.environ['FREESOUND_TOKEN']}"})
-    with _lock:  # one search at a time, GAP apart, even with several pages scanning at once
+    with _lock: # one search at a time, GAP apart
         time.sleep(max(0.0, _last + GAP - time.monotonic()))
         try:
             with urllib.request.urlopen(req, timeout=15) as res:
@@ -44,8 +41,7 @@ def _search(keyword, kind):
 
 
 def candidates(keyword, kind):
-    """Up to 10 sounds for `keyword` ("door knock"), kind "effect" (0.3-4 s) or "loop" (10-120 s), from the cache or
-    Freesound; [] if nothing matches or the search failed (a failure isn't cached, so it's retried next time)."""
+    """Up to 10 sounds for `keyword` and kind, cached; [] if none or failed (failures aren't cached)."""
     keyword = " ".join(str(keyword or "").lower().split())
     if not keyword:
         return []
@@ -68,9 +64,7 @@ def find(keyword, kind):
 
 
 def download(sound_id):
-    """Download a picked sound's preview MP3 into output/sfx/ once; its path, or None if this app never searched it
-    (so the server isn't a proxy for any Freesound file). Slow the first time (a 2-minute loop took 26 s), so sounds
-    are downloaded as soon as they're picked (pipeline/book/sounds.py), not when the reader first plays them."""
+    """Download a picked sound's MP3 into output/sfx/ once; None if this app never searched it."""
     path = os.path.join(FILE_DIR, f"{sound_id}.mp3")
     if os.path.isfile(path):
         return path

@@ -10,7 +10,7 @@ from backend.db import books, deleted, lock
 from backend.pipeline.ocr import jpeg_data_url
 
 NONE = {"setting": None, "lines": {}}
-SEED = 7  # same page, same seed: usually the same picks (temperature can't be set on this model)
+SEED = 7 # same page, same seed: usually the same picks
 
 KEYWORDS = """You add sound effects to a children's picture book read aloud. You get the narrator's lines of one page,
 each with its line number, and usually a photo of the page with its illustration. Reply with JSON:
@@ -27,8 +27,8 @@ each with its line number, and usually a photo of the page with its illustration
   "door knock", "tea pouring").
 - word: the one word in that line where the sound happens, copied exactly as it appears in the line."""
 
-# KEYWORDS for ElevenLabs: the same slots and rules, but descriptions to generate from rather than search words
-MAX_EFFECTS = 3  # line effects per page with ElevenLabs: more than this was busy (7 on one page)
+# KEYWORDS for ElevenLabs: descriptions instead of search words
+MAX_EFFECTS = 3 # max line effects per page (ElevenLabs)
 DESCRIBE = KEYWORDS.split("\n- sound:")[0].replace(
     "- lines: every line where something makes a noise, or someone does something you'd naturally hear (walking,\n"
     "  running, a door closing, eating, pouring, wind, a car passing, an animal). At most one per line; skip the rest.",
@@ -79,9 +79,8 @@ def _choose(slots, seed):
 
 
 def page_sounds(page, blocked=(), image=None):
-    """Pick a page's sounds from its Narrator lines (see the module docstring). NONE for a page without Narrator lines,
-    or if an LLM reply is unusable. blocked: Freesound ids never to use (removed by the user). image: the page's
-    stored image path; sent along so the background can follow the illustration."""
+    """Pick a page's sounds from its Narrator lines; NONE if none or the LLM reply is unusable.
+    blocked: ids not to use; image: the page photo, for the background."""
     narrated = {i: l["Dialogue"] for i, l in enumerate(page.get("text", [])) if l["Character"] == "Narrator"}
     if not narrated:
         return NONE
@@ -91,7 +90,7 @@ def page_sounds(page, blocked=(), image=None):
         listed = "\n".join(f"{i}: {d}" for i, d in narrated.items())
         content = listed
         if image and os.path.isfile(image):  # the page photo as JPEG, same as the follow-up questions send it
-            # ponytail: 1024px long side, as for questions; enough to tell a beach from a kitchen
+            # ponytail: 1024px long side
             content = [{"type": "text", "text": listed}, {"type": "image_url", "image_url": {"url": jpeg_data_url(image, max_side=1024)}}]
         reply = json.loads(bedrock_gpt.chat([{"role": "system", "content": DESCRIBE if generated else KEYWORDS},
                                              {"role": "user", "content": content}], seed=SEED, max_tokens=4000))
@@ -107,7 +106,7 @@ def page_sounds(page, blocked=(), image=None):
                 i, word = int(item["line"]), str(item["word"]).strip()
             except (KeyError, TypeError, ValueError):
                 continue
-            # only the Narrator's lines, one sound each, and a word that's in the line (so it can be timed)
+            # Narrator lines only, one sound each, a word in the line
             if i not in narrated or str(i) in slots or not word or word.lower() not in narrated[i].lower():
                 continue
             found = [c for c in freesound.candidates(item.get("sound"), "effect") if c["id"] not in blocked]
@@ -124,8 +123,7 @@ def page_sounds(page, blocked=(), image=None):
 
 
 def _generate(reply, narrated, blocked):
-    """page_sounds for ElevenLabs: generate each described sound; the same description is the same sound, so one the
-    user removed (blocked) is skipped, not generated again."""
+    """page_sounds for ElevenLabs: generate each described sound, skipping blocked ones"""
     def make(prompt, kind):
         s = elevenlabs.generate(prompt, kind)
         return s if s and s["id"] not in blocked else None
@@ -136,14 +134,14 @@ def _generate(reply, narrated, blocked):
             i, word = int(item["line"]), str(item["word"]).strip()
         except (KeyError, TypeError, ValueError):
             continue
-        # only the Narrator's lines, one sound each, and a word that's in the line (so it can be timed)
+        # same rules as page_sounds
         if i in narrated and i not in ok and word and word.lower() in narrated[i].lower():
             ok[i] = (item.get("sound"), word)
-    # more than MAX_EFFECTS anyway: keep ones evenly spaced over the page (first, middle, last), before generating
+    # keep MAX_EFFECTS, evenly spaced
     order = sorted(ok)
     if len(order) > MAX_EFFECTS:
         order = [order[round(k * (len(order) - 1) / (MAX_EFFECTS - 1))] for k in range(MAX_EFFECTS)]
-    # all at once (elevenlabs.CONCURRENT caps the calls across pages)
+    # elevenlabs.CONCURRENT caps the calls
     jobs = {"setting": (reply.get("setting"), "loop"), **{str(i): (ok[i][0], "effect") for i in order}}
     with ThreadPoolExecutor(len(jobs)) as pool:
         made = dict(zip(jobs, pool.map(lambda j: make(*j), jobs.values())))
@@ -152,8 +150,7 @@ def _generate(reply, narrated, blocked):
 
 
 def set_page_sounds(book_id, img, text):
-    """Pick sounds for the page showing `img` with lines `text`, and store them on it, unless it changed meanwhile
-    (deleted, or its lines edited: the edit picks its own). Returns the sounds stored, or None if not stored."""
+    """Pick and store sounds for page `img`, unless it changed meanwhile. Returns them, or None."""
     start = time.perf_counter()
     blocked = (books.find_one({"_id": book_id}, {"blockedSounds": 1}) or {}).get("blockedSounds", [])
     sounds = page_sounds({"img": img, "text": text}, blocked, os.path.join(IMG_DIR, book_id, os.path.basename(img)))
@@ -163,7 +160,7 @@ def set_page_sounds(book_id, img, text):
         key = next((k for k, p in pages.items() if p["img"] == img and p["text"] == text), None)
         if key:  # Cover / PageOne...: no . or $, safe in the dotted path
             books.update_one({"_id": book_id}, {"$set": {f"book.0.Book.Pages.{key}.sounds": sounds}})
-    # downloaded now, in the background, so they're ready before the reader first plays them (Pick again doesn't wait)
+    # downloaded now, so they're ready before playing
     threading.Thread(target=download_all, args=([sounds["setting"], *sounds["lines"].values()],), daemon=True).start()
     n = len(sounds["lines"])
     print(f"book {book_id} sounds {img}: setting {sounds['setting'] and sounds['setting']['keyword']!r}, "
@@ -173,8 +170,7 @@ def set_page_sounds(book_id, img, text):
 
 
 def download_all(picked):
-    """Download each picked sound's MP3 (None entries skipped); a failure is only printed: the reader's request
-    downloads it later instead."""
+    """Download each picked sound's MP3; failures are only printed"""
     for s in picked:
         if not s or not isinstance(s["id"], int):  # generated sounds (ElevenLabs) are saved already
             continue
@@ -184,10 +180,9 @@ def download_all(picked):
             print(f"  sounds: download of {s['id']} failed: {e!r}", flush=True)
 
 
-# The reader's default voice for these speakers (Cast.jsx: the Narrator starts as Aoede, sound words follow the
-# Narrator), so their clips can be made while the book processes; other characters' voices are chosen per reading.
+# Speakers with a default voice, so their clips can be made while processing
 VOICED = ("Narrator", "Onomatopoeia")
-_voicing = threading.BoundedSemaphore(8)  # Vertex calls at once from processing (the reader's own calls don't wait)
+_voicing = threading.BoundedSemaphore(8) # Vertex calls at once from processing
 
 
 def voiced_lines(text):
@@ -209,8 +204,7 @@ def voice_page(text):
 
 
 def prepare_later(book_id, page):
-    """A scanned page's sounds and narrator clips, both in the background at once. The Library's progress bar
-    (routes/books.py scan_progress) counts them."""
+    """A scanned page's sounds and narrator clips, in the background"""
     threading.Thread(target=set_page_sounds, args=(book_id, page["img"], page["text"]), daemon=True).start()
     threading.Thread(target=voice_page, args=(page["text"],), daemon=True).start()
 

@@ -3,12 +3,8 @@ import { request } from '../api.js'
 import { BAND, BandLine } from '../BandLine.jsx'
 import { cropImage } from '../camera.js'
 
-// Its own screen, opened by the Library after the reader (Book.jsx) closes with photos taken at decision-model turns
-// and Next page taps.
-// For each photo the user drags the two lines to the top and bottom of the book (same as the Scanner's setup). Confirm
-// crops it there and sends it to /scan/version, which keeps it as taken (not straightened or unwarped: the tilt and
-// distance are what the reading camera sees) as another fingerprint version of that page for the ORB check; Skip
-// drops it. onDone after the last.
+// After reading: mark the book in each photo taken at a turn; Confirm saves it as another ORB fingerprint
+// version of that page (/scan/version), Skip drops it.
 export default function CropPhotos({ id, shots, onDone }) {
   const [k, setK] = useState(0)
   const [band, setBand] = useState(BAND)

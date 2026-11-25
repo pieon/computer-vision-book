@@ -31,7 +31,7 @@ function BookJson({ id, onBack }) {
   )
 }
 
-// Page 1's photo as the cover, or a document-style placeholder if there's no image (e.g. folder deleted).
+// Page 1's photo as the cover, or a placeholder
 function Cover({ book }) {
   const [failed, setFailed] = useState(false)
   if (!book.cover || failed) {
@@ -47,31 +47,30 @@ function Cover({ book }) {
 }
 
 
-// A simple library of scanned books from MongoDB.
-// resume: { id, cast, page } from Home's latest book: open it straight away (cast null: Who reads? first).
+// Library of scanned books. resume: { id, cast, page } from Home (cast null: Who reads? first).
 export default function Library({ onHome, onLibrary, onScan, resume }) {
   const [books, setBooks] = useState(null) 
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null) 
   const [readId, setReadId] = useState(resume?.id ?? null)
-  const [cast, setCast] = useState(resume?.cast ?? null) // who reads each character, picked in Cast before reading readId
-  const [startPage, setStartPage] = useState(resume?.page ?? 0) // the page the reader opens on
-  const [marking, setMarking] = useState(null) // { id, shots }: the reader closed with photos to mark (CropPhotos)
-  const [pagesOf, setPagesOf] = useState(null) // book id open in Edit Book (its Pages list)
-  const [editing, setEditing] = useState(null) // page index open in the line editor, from the Pages list
-  const [adding, setAdding] = useState(null) // { id, start }: scanning more pages onto that book, from Pages
+  const [cast, setCast] = useState(resume?.cast ?? null) // picked in Cast
+  const [startPage, setStartPage] = useState(resume?.page ?? 0)
+  const [marking, setMarking] = useState(null) // photos to mark after reading
+  const [pagesOf, setPagesOf] = useState(null) // book open in Edit Book
+  const [editing, setEditing] = useState(null) // page open in the line editor
+  const [adding, setAdding] = useState(null) // scanning more pages onto a book
   const [query, setQuery] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
   const [menuFor, setMenuFor] = useState(null) 
-  useScanQueue() // re-render as scanned books are prepared in the background (scanQueue.js)
+  useScanQueue() // re-render as books are prepared
   const pagesIn = landed()
 
-  // Reloaded whenever a background page finishes, so new pages and the cover show up.
+  // Reload when a page lands, and after editing or reading
   useEffect(() => {
     getJson('/books')
       .then(setBooks)
       .catch((e) => setError(e.message))
-  }, [pagesIn, editing, pagesOf, readId]) // and after Edit Book / Pages / the reader close: fixes, page counts, flags
+  }, [pagesIn, editing, pagesOf, readId])
 
   // Escape closes the options menu.
   useEffect(() => {
@@ -81,11 +80,11 @@ export default function Library({ onHome, onLibrary, onScan, resume }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [menuFor])
 
-  // Delete from MongoDB (and its page images) after a confirm; can't be undone.
+  // Delete after a confirm; can't be undone
   async function remove(book) {
     if (!window.confirm(`Delete "${book.name}" (${book.pages} pages)? This can't be undone.`)) return
     try {
-      cancelUploads(book.id) // a book still processing: stop its queue too (the server drops its late pages)
+      cancelUploads(book.id) // stop its uploads too
       await removeUrl(`/books/${book.id}`)
       setBooks((list) => list.filter((b) => b.id !== book.id))
     } catch (e) {
@@ -93,7 +92,7 @@ export default function Library({ onHome, onLibrary, onScan, resume }) {
     }
   }
 
-  // the library stays mounted underneath, so Back doesn't reload the list
+  // the library stays mounted, so Back doesn't reload
   if (openId) return <BookJson id={openId} onBack={() => setOpenId(null)} />
   if (readId && !cast) return <Cast id={readId} onStart={setCast} onBack={() => setReadId(null)} />
   if (marking) return <CropPhotos id={marking.id} shots={marking.shots} onDone={() => setMarking(null)} />
@@ -105,15 +104,15 @@ export default function Library({ onHome, onLibrary, onScan, resume }) {
       setStartPage(0)
     }} />
   }
-  if (adding) { // back to Pages either way; added pages keep processing there
+  if (adding) { // back to Pages either way
     return <Scanner bookId={adding.id} start={adding.start} onDone={() => setAdding(null)} onCancel={() => setAdding(null)} />
   }
-  if (editing !== null) return <BookEditor id={pagesOf} index={editing} onBack={() => setEditing(null)} /* back to Pages */ />
+  if (editing !== null) return <BookEditor id={pagesOf} index={editing} onBack={() => setEditing(null)} />
   if (pagesOf) {
     return <PageList id={pagesOf} onBack={() => setPagesOf(null)} onOpen={setEditing} onAdd={(start) => setAdding({ id: pagesOf, start })} />
   }
 
-  // Books still being processed whose cover isn't saved yet aren't on the server: show a placeholder tile for them.
+  // Placeholder tiles for books not on the server yet
   const listed = new Set((books ?? []).map((b) => b.id))
   const pendingOnly = books ? scanning().filter((id) => !listed.has(id)).map((id) => ({ id, name: 'New book', pages: 0 })) : []
   const processing = new Set(scanning())
@@ -142,7 +141,7 @@ export default function Library({ onHome, onLibrary, onScan, resume }) {
 
       <div className="row g-3">
         {shown.map((b) => {
-          const busy = processing.has(b.id) // still uploading or being prepared (OCR, sounds, voice): no reading or menu until ready
+          const busy = processing.has(b.id) // still processing: no reading or menu
           const warn = !busy && b.unknown?.length
           return (
           <div className="col-4 col-md-3" key={b.id}>
@@ -155,7 +154,7 @@ export default function Library({ onHome, onLibrary, onScan, resume }) {
               </button>
               <span className="library-tag" aria-hidden="true">{b.pages} pg</span>
               <ScanProgress id={b.id} />
-              {/* hidden while pages process; "!" instead of ••• when a line's speaker couldn't be worked out */}
+              {/* "!" when a speaker is unknown */}
               {!busy && (
                 <button type="button" className={`library-more${warn ? ' library-more-warn' : ''}`}
                   aria-label={`More options for ${b.name}${warn ? ', needs speaker fixes' : ''}`}

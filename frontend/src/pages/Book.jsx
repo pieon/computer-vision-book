@@ -10,10 +10,10 @@ import { isRead, variants, words } from '../reading.js'
 import { FALLBACK_AFTER, mixedStep, ORB_SURE, START } from '../fallback.js'
 import { Orb, orbOf } from '../components/Orb.jsx'
 
-// Connect to deepgram and stream the mic input to the deepgram api. Disconnect mic stream upon closing.
+// Stream the mic to /listen (Deepgram). Returns a stop function.
 function listen(mic, reading, book, onText) {
   let recorder
-  const query = new URLSearchParams({ reading, book }) // book: the backend logs this session's minutes for the Home chart
+  const query = new URLSearchParams({ reading, book }) // book: for Home's reading time
   const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/listen?${query}`)
   socket.onopen = () => {
     console.log('[stt] connected')
@@ -39,24 +39,22 @@ function listen(mic, reading, book, onText) {
   }
 }
 
-// What turns the page: 'orb', 'decision', or 'mixed' (ORB, with the decision model as fallback; fallback.js)
+// Page-turn check: 'orb', 'decision', or 'mixed' (ORB, decision model as fallback)
 const TURN_CHECK = 'mixed'
-// With 'decision' turning the pages, also run 'mixed' alongside and only log what it does ("MIXED" lines, never turns)
+// With 'decision', also run 'mixed' log-only
 const SHADOW_MIXED = true
-// Save a 10-frame sheet of each flip (recordSheets), centred on the motion peak
+// Save a frame sheet of each flip
 const SAVE_SHEETS = true
-// Motion (% of pixels changed) above this is a burst; its highest reading is the peak
+// Motion % that starts a burst
 const SHEET_MOTION = 7
-// Frames in a sheet before and after the peak (150 ms apart)
+// Frames before / after the peak
 const SHEET_BEFORE = 5
 const SHEET_AFTER = 5
-// While waiting for a turn: after this many ORB replies in a row that see neither page clearly, the voice agents ask
-// "We want to see the book too!". A reply comes about every 0.5 s (server ~0.4 s: unwarp + match), so ~3 s: past a
-// hand passing over the book, soon enough for the child to fix it.
+// Unsure ORB replies in a row (~3 s) before asking to see the book
 const SHOW_BOOK_AFTER = 6
-const NEXT_SHOT_MS = 1000 // the Next page button's photo waits this long, so the hand is out of the way
+const NEXT_SHOT_MS = 1000 // Next page photo delay, so the hand is gone
 
-// Console badges for the page-turn checks (filter "ORB" / "DECISION")
+// Console badges
 const BADGE = {
   orb: 'background:#1e6fd9;color:#fff;font-weight:bold;border-radius:3px',
   decision: 'background:#e67e22;color:#fff;font-weight:bold;border-radius:3px',
@@ -67,13 +65,12 @@ const BADGE = {
   err: 'color:#e74c3c;font-weight:bold',
 }
 
-// ORB page check, nonstop: snap the full frame, POST /turn, then onReply(reply, { blob, snapAt, sentAt, stopped }) and
-// the next photo. snapAt = when the photo was taken. Returns a stop function.
-// ponytail: one request in flight at a time, nonstop while waiting; add a short gap if the server load matters
+// Nonstop ORB page check: snap, POST /turn, onReply. Returns a stop function.
+// ponytail: one request at a time, no gap; add one if server load matters
 function orbLoop(video, query, onReply, name = 'ORB') {
   let stopped = false
   const check = () => {
-    if (!video.srcObject?.active) return // camera stopped (left the book): nothing left to photograph
+    if (!video.srcObject?.active) return // camera stopped
     const snapAt = performance.now()
     snap(video, ({ blob, url }) => {
       URL.revokeObjectURL(url)
@@ -82,7 +79,7 @@ function orbLoop(video, query, onReply, name = 'ORB') {
         .then((reply) => onReply(reply, { blob, snapAt, sentAt, stopped }))
         .catch((e) => console.log(`%c ${name} %c failed`, BADGE.orb, BADGE.err, e))
         .finally(() => { if (!stopped) check() })
-    }, { maxWidth: 1400, quality: 0.8 }) // full frame: the page is found wherever the book sits
+    }, { maxWidth: 1400, quality: 0.8 })
   }
   check()
   return () => { stopped = true }
@@ -92,11 +89,11 @@ const TURN_CHECKS = {
   orb(video, query, page, goTo, onOrb) {
     return orbLoop(video, query, ({ page: p, scores, version, times }, { blob, sentAt, stopped }) => {
       if (!stopped) onOrb?.({ page: p, scores })
-      // per page: inliers / keypoints in that page's fingerprint (good = matches passing the ratio test)
+      // per page: inliers / keypoints (good = passed the ratio test)
       const counts = (s) => Object.entries(s).map(([k, v]) => `p${+k + 1} ${v.inliers}/${v.total} (good ${v.good})`).join(' · ')
       const verdict = (to) => (to !== page ? `TURNED to page ${to + 1}` : 'same page')
       const after = stopped ? ' · (after turn)' : ''
-      const via = version ? ` · via reading version ${version}` : '' // the scans failed, a saved reading photo matched
+      const via = version ? ` · via reading version ${version}` : '' // matched a saved reading photo
       console.log(`%c ORB %c page ${page + 1} → ${verdict(p)} · ${counts(scores)} · 25 to turn${via}${after}`,
         BADGE.orb, p !== page ? BADGE.yes : BADGE.no,
         `| ${Math.round(blob.size / 1024)} KB |`, timing({}, times, performance.now() - sentAt))
@@ -104,9 +101,7 @@ const TURN_CHECKS = {
     })
   },
 
-  // a sheet done while a request is in flight is dropped
-  // The backend turns only on "page_turn" with p >= turn.py TURN_P; a less sure "page_turn", "no_turn" and
-  // "unclear" all mean not turned this round.
+  // Decision model on motion sheets; turns only on a sure "page_turn" (turn.py TURN_P)
   decision(video, query, page, goTo) {
     let stopped = false
     let deciding = false
@@ -135,15 +130,11 @@ const TURN_CHECKS = {
   },
 }
 
-// Frames are kept in a rolling buffer (camera.js frameBuffer). A burst of motion over SHEET_MOTION is followed to its
-// end; its highest reading is the peak (the middle of the flip), and the sheet holds SHEET_BEFORE frames up to it and
-// SHEET_AFTER after it. One sheet at a time: bursts are ignored until it's saved. Stopping (the page turned) still
-// finishes a sheet already asked for, so the flip that turned the page is saved.
-// onSheet({ blob, peak, at }) gets each sheet (the mixed method's candidates); it's saved to /turn/sheet if SAVE_SHEETS.
+// A frame sheet around each motion peak (a flip), passed to onSheet and saved if SAVE_SHEETS
 function recordSheets(video, query, page, onSheet) {
   const buffer = frameBuffer(video)
   let recording = false
-  let burst = null // { max, at }: the highest motion reading so far in this burst, and when
+  let burst = null // { max, at } of this burst
   const stopMotion = watchMotion(video, (score) => {
     if (score > SHEET_MOTION) {
       if (!burst || score > burst.max) burst = { max: score, at: performance.now() }
@@ -163,24 +154,19 @@ function recordSheets(video, query, page, onSheet) {
         .catch((e) => console.log('%c SHEET %c failed', BADGE.sheet, BADGE.err, e))
         .finally(() => { recording = false })
     })
-  }) // full frame, same as the sheet
+  })
   return () => { stopMotion(); buffer.stop() }
 }
 
-// The mixed method: its own ORB loop plus the motion-peak sheets (via onSheet), run through fallback.js mixedStep; when
-// it says so, the chosen sheet goes to the decision model. Prints "MIXED" lines. Returns { onSheet, stop }.
-// - With goTo (TURN_CHECK 'mixed'): it turns the page (to ORB's page, or the next one on the model's page_turn) and
-//   stop() ends it at once.
-// - Without (SHADOW_MIXED, logged only): it never turns the page, and stop() (usually: the real check just turned it)
-//   doesn't cut it off: it keeps checking the old page until it reaches its own answer (ORB sees the next page, or the
-//   model answers) or MIXED_LINGER_MS pass, so every flip gets a MIXED result to compare. Those lines say "(after turn)".
+// Mixed method: ORB + motion sheets through fallback.js mixedStep. With goTo it turns the page;
+// without, it only logs, lingering up to MIXED_LINGER_MS after stop() for its answer.
 const MIXED_LINGER_MS = 6000
 function mixedCheck(video, query, page, goTo = null, onOrb = null) {
   let state = START
-  let stopped = false // stop() was called: lingering for an answer
-  let finished = false // the ORB loop is stopped
+  let stopped = false // lingering for an answer
+  let finished = false
   let linger = null
-  let orbPage = page + 1 // the page ORB matched in its latest reply, for a turn by ORB
+  let orbPage = page + 1 // ORB's latest page
   const say = (msg, style = BADGE.no) => console.log(`%c MIXED %c page ${page + 1} · ${msg}${stopped ? ' · (after turn)' : ''}`,
     BADGE.mixed, style)
   function finish() {
@@ -199,11 +185,11 @@ function mixedCheck(video, query, page, goTo = null, onOrb = null) {
         .then(({ choice, page_turn: turned, p, error }) => feed({ type: 'decision', turned, choice, p, error }))
         .catch((e) => feed({ type: 'decision', turned: false, error: e.message }))
     }
-    if (stopped && (state.done || event.type === 'decision')) finish() // lingering, and it has its answer
+    if (stopped && (state.done || event.type === 'decision')) finish()
   }
   const stopOrb = orbLoop(video, query, ({ page: p, scores, version }, { snapAt }) => {
     if (finished) return
-    if (!stopped) onOrb?.({ page: p, scores }) // not while lingering on the old page
+    if (!stopped) onOrb?.({ page: p, scores })
     if (version) say(`ORB matched page ${p + 1} via reading version ${version}`)
     if (p !== page) orbPage = p
     feed({ type: 'orb', next: p !== page, current: scores[page]?.inliers ?? 0, at: snapAt })
@@ -213,7 +199,7 @@ function mixedCheck(video, query, page, goTo = null, onOrb = null) {
     stop() {
       if (stopped) return
       stopped = true
-      if (goTo || state.done) return finish() // in charge (it turned the page, or the wait ended), or already answered
+      if (goTo || state.done) return finish()
       linger = setTimeout(() => {
         const n = state.candidates.length
         say(`no answer within ${MIXED_LINGER_MS / 1000} s (${n} candidate sheet${n === 1 ? '' : 's'}, ORB unsure ${state.unsure}/${FALLBACK_AFTER}${state.deciding ? ', model still deciding' : ''})`)
@@ -224,41 +210,41 @@ function mixedCheck(video, query, page, goTo = null, onOrb = null) {
 }
 
 const constraints = { video: { facingMode: 'user', width: { ideal: 4032 }, height: { ideal: 3024 } }, audio: { echoCancellation: true, noiseSuppression: true } }
-// startPage: the page to open on (Home's "continue where you left off"); kept within the book once it loads.
+// startPage: the page to open on (from Home)
 export default function Book({ id, cast, onBack, startPage = 0 }) {
   const voiceOf = (l) => cast[l?.Character] || ''
-  const [pages, setPages] = useState(null) // [{img, text: [{Character, Dialogue}]}] in book order
+  const [pages, setPages] = useState(null) // [{img, text: [{Character, Dialogue}]}]
   const [error, setError] = useState('')
   const [index, setIndex] = useState(startPage)
-  const [line, setLine] = useState(0) // the line being read on this page
+  const [line, setLine] = useState(0)
   const [camStatus, setCamStatus] = useState('Starting camera...')
   const videoRef = useRef(null)
-  const lineRef = useRef(null) // the current line's element, to keep it in view 
-  const tracking = useRef(null) // { variants (reading.js), line, pageText } of the current child line; null on voiced lines or once read
-  const heard = useRef('') // finished phrases said since the current line began
+  const lineRef = useRef(null)
+  const tracking = useRef(null) // the child line being matched, or null
+  const heard = useRef('')
   const pageDone = useRef(null)
-  const lineDoneRef = useRef(null) // the latest lineDone()
-  const [turnWait, setTurnWait] = useState(false) // last line done: waiting for the real book's page to turn
-  const [finished, setFinished] = useState(false) // the book's final line is done
-  const pageId = useRef(0) // bumped per page, so a question that arrives after the page turned is dropped
-  const asked = useRef([]) // questions already asked on this page, so Bedrock doesn't repeat one
-  const [question, setQuestion] = useState(null) // latest follow-up question on this page; a newer one replaces it
-  const [askBook, setAskBook] = useState(false) // waiting for a turn and ORB can't see the book: the voices ask to see it
-  const [showText, setShowText] = useState(false) // the page's lines are hidden unless switched on
-  const [paused, setPaused] = useState(false) // paused: no narration, no line matching or questions, no page-turn watch
-  const pausedRef = useRef(false) // for onText, which the mic socket holds from the first render
+  const lineDoneRef = useRef(null)
+  const [turnWait, setTurnWait] = useState(false) // waiting for the real page turn
+  const [finished, setFinished] = useState(false)
+  const pageId = useRef(0) // drops late questions
+  const asked = useRef([])
+  const [question, setQuestion] = useState(null)
+  const [askBook, setAskBook] = useState(false)
+  const [showText, setShowText] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const pausedRef = useRef(false)
   useEffect(() => { pausedRef.current = paused }, [paused])
   const reading = useRef(`${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}_${id}`)
 
   // Track the reading progress.
   function onText(text, final) {
-    const ws = wordSound.current // word-timed effect of the child's line: as soon as the word is heard, interim or not
+    const ws = wordSound.current
     if (ws && !ws.narrated && !pausedRef.current && words(text).includes(ws.word)) {
       wordSound.current = null
       playEffect(ws.sound, `said "${ws.word}"`)
     }
     if (!final || pausedRef.current) return
-    if (!tracking.current && pageDone.current) { // page finished: nothing left to read, so anything said is talk
+    if (!tracking.current && pageDone.current) { // page done: speech is talk
       const said = words(text)
       console.log('[track] page done | talk:', text)
       if (said.length >= 2) askQuestion({ ...pageDone.current, unmatched: said.join(' ') })
@@ -268,23 +254,22 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     heard.current += ` ${text}`
     const { variants: lineVariants, line, pageText, img } = tracking.current
     const result = isRead(lineVariants, heard.current)
-    const extra = isRead(lineVariants, text).unmatched // this phrase's words that aren't in the line
+    const extra = isRead(lineVariants, text).unmatched
     console.log('[track]', result.read ? 'read' : 'not yet', `${Math.round(result.share * 100)}%`,
       result.matches.map((m) => (m.book === m.heard ? m.book : `${m.book}~${m.heard}`)).join(' '),
       ' | not the line:', extra.join(' '))
     if (extra.length >= 2) askQuestion({ line, pageText, img, unmatched: extra.join(' ') })
     if (!result.read) return
     tracking.current = null
-    lineDoneRef.current() // reading never waits on a question (same as ../CA)
+    lineDoneRef.current()
   }
 
-  // Ask Bedrock for a follow-up question about what the child said, in the background.
+  // Follow-up question, in the background
   const asking = useRef(false)
   function askQuestion({ line, pageText, img, unmatched }) {
     if (asking.current) return console.log('[question] skipped, one is already on its way:', unmatched)
     asking.current = true
     const forPage = pageId.current
-    // book + page_img: the backend sends that page's stored image to GPT as the illustration (as JPEG)
     request('/question', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -292,7 +277,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     })
       .then(({ question: q }) => {
         console.log('[question]', q || '(none)')
-        if (!q || forPage !== pageId.current) return // nothing to ask, or the page turned meanwhile
+        if (!q || forPage !== pageId.current) return
         asked.current.push(q)
         setQuestion(q)
       })
@@ -300,20 +285,18 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
       .finally(() => { asking.current = false })
   }
 
-  // keys keep insertion order: Cover, PageOne, ...; each page keeps its key for the flag button
   const load = () => getJson(`/books/${id}`)
     .then((book) => Object.entries(book[0].Book.Pages).map(([key, p]) => ({ ...p, key })))
   useEffect(() => {
     load().then((ps) => { setPages(ps); setIndex((i) => Math.min(i, ps.length - 1)) }).catch((e) => setError(e.message))
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps -- load only uses id
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Where reading is, with these voices, saved on the server on every page and at the end: Home opens the last book
-  // read on this page (or back to Who reads? once it's finished). A failed save only costs that.
+  // Save where reading is, for Home's Last Read Book
   useEffect(() => {
     if (!pages) return
     request(`/books/${id}/reading`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: index, finished, cast }) }).catch((e) => console.log('[reading] not saved:', e))
-  }, [pages, index, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- id and cast are fixed while reading
+  }, [pages, index, finished]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [editing, setEditing] = useState(false)
   const wasPaused = useRef(false)
@@ -329,7 +312,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
       .finally(() => { setEditing(false); setPaused(wasPaused.current) })
   }
   
-  // Camera + mic on while the book is open; transcripts are logged so you can see the mic working.
+  // Camera + mic while the book is open
   useEffect(() => {
     let stopListening
     const stopCamera = startCamera(
@@ -346,10 +329,9 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
 
   const page = pages?.[index]
   const current = page?.text[line]
-  const lastLine = !page || line >= page.text.length - 1 // also true on a page with no text
+  const lastLine = !page || line >= page.text.length - 1
   const atEnd = pages && index === pages.length - 1 && lastLine
-  // The voice agents picked in Cast, one per voice (Narrator first; Onomatopoeia shares the Narrator's), with the
-  // characters each reads; the child's own characters ('') aren't in the row. The one reading the current line is big.
+  // Voice row: one orb per voice, with its characters
   const agents = Object.entries(cast).reduce((list, [name, voice]) => {
     if (!voice || name === 'Onomatopoeia' || !orbOf(voice)) return list
     const at = list.find((a) => a.voice === voice)
@@ -359,7 +341,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
   }, [])
   const speaking = !turnWait && !finished ? voiceOf(current) : ''
 
-  // A line was read or narrated: go to the next line, or on the page's last line wait for the real page to turn
+  // Next line, or wait for the page turn
   function lineDone() {
     if (lastLine) pageDone.current = { line: current?.Dialogue ?? '', pageText: page.text.map((l) => l.Dialogue).join('\n'), img: page.img }
     if (atEnd) return setFinished(true)
@@ -373,8 +355,8 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     pageDone.current = null
   }
   function skipLine() {
-    tracking.current = null // later speech on this page is talk (questions), not this line, same as onText after a match
-    narrator.onended = narrator.onerror = null // a voiced line cut short mustn't call lineDone() again when it ends
+    tracking.current = null
+    narrator.onended = narrator.onerror = null
     narrator.pause()
     lineDone()
   }
@@ -388,7 +370,6 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flagged }),
     }).catch((e) => { console.log('[flag] failed:', e); set(!flagged) })
   }
-  // Jump to another page's first line; the [index] effect below clears that page's done/turn/question state
   function goPage(i) {
     setIndex(i)
     setLine(0)
@@ -396,16 +377,14 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
   }
   useEffect(() => { lineDoneRef.current = lineDone })
 
-  // A decision-model turn: show its guess (the next page) and hold reading until the user picks the page they're on
-  // (PagePick). Its photo is kept with the picked page; leaving hands them to the Library's CropPhotos screen. The turn
-  // check only runs while not paused, so un-pausing after the pick restores it.
-  // ponytail: shots are kept in memory only; unmarked ones are lost if the app reloads. Upload them as taken if that matters
+  // Decision-model turn: pause and ask which page (PagePick); its photo goes to CropPhotos
+  // ponytail: shots live in memory, lost on reload; upload as taken if that matters
   const shots = useRef([]) // [{ blob, url, page }]
-  const [confirm, setConfirm] = useState(null) // { blob, url, page: the guess } while the carousel is open
+  const [confirm, setConfirm] = useState(null) // { blob, url, page } while PagePick is open
   function decisionTurn(video, p) {
     setPaused(true)
-    setConfirm({ page: p }) // open now; the photo joins it once encoded (a pick before that keeps no photo)
-    snap(video, (s) => setConfirm((c) => (c ? { ...c, ...s } : (URL.revokeObjectURL(s.url), null)))) // full frame
+    setConfirm({ page: p })
+    snap(video, (s) => setConfirm((c) => (c ? { ...c, ...s } : (URL.revokeObjectURL(s.url), null))))
   }
   function pick(i) {
     goPage(i)
@@ -413,21 +392,18 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     setConfirm(null)
     setPaused(false)
   }
-  // The Next page button: the user says the book is on the next page, so no PagePick. Its photo is kept like a
-  // decision-model turn's (usually the check missed a turned page), for CropPhotos after reading; Skip there drops it.
-  // The photo waits NEXT_SHOT_MS, so the hand that tapped (or turned the page) is out of the way.
+  // Next page button: no PagePick; a photo for CropPhotos after NEXT_SHOT_MS
   function nextPage() {
     const p = index + 1
     goPage(p)
     const video = videoRef.current
     setTimeout(() => {
-      // skipped if the camera stopped meanwhile (left the book)
-      if (video?.videoWidth && video.srcObject?.active) snap(video, (s) => shots.current.push({ ...s, page: p })) // full frame, like decisionTurn
+      if (video?.videoWidth && video.srcObject?.active) snap(video, (s) => shots.current.push({ ...s, page: p }))
     }, NEXT_SHOT_MS)
   }
-  const leave = () => onBack(shots.current) // the Library opens CropPhotos if there are any
+  const leave = () => onBack(shots.current)
 
-  // A new line starts with nothing heard; only the reader's lines are matched against speech.
+  // New line: match only the reader's lines
   useEffect(() => {
     heard.current = ''
     tracking.current = current && !voiceOf(current)
@@ -435,7 +411,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
       : null
   }, [current])
 
-  // A new page starts with no question; one still on its way from the last page is dropped.
+  // New page: clear its question state
   useEffect(() => {
     pageId.current++
     asked.current = []
@@ -449,7 +425,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     pageDone.current = { line: '', pageText: '', img: page.img }
     if (atEnd) setFinished(true)
     else setTurnWait(true)
-  }, [index, pages]) // eslint-disable-line react-hooks/exhaustive-deps -- page and atEnd follow from index and pages
+  }, [index, pages]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const video = videoRef.current
@@ -461,9 +437,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
       if (modesRef.current.cues) playEffect(cuesRef.current.turn, 'cue: page turned')
       if (by === 'decision') decisionTurn(video, p)
     }
-    // 'mixed' turns the page itself; beside 'decision' a logged-only copy can run (beside 'orb' it would just be a
-    // second ORB loop). Either needs the motion-peak sheets, so they're made in decision mode too when one runs.
-    // every ORB reply: count the unsure ones in a row (neither page clearly seen) for the "see the book" bubble
+    // unsure ORB replies in a row, for the "see the book" bubble
     let unsure = 0
     const onOrb = ({ page: p, scores }) => {
       unsure = p !== index || (scores[index]?.inliers ?? 0) >= ORB_SURE ? 0 : unsure + 1
@@ -477,29 +451,24 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     return () => { stopCheck(); stopSheets(); mixed?.stop(); setAskBook(false) }
   }, [paused, turnWait, index, id])
 
-  // Sound effects (sounds.js; picked per page at scan time), in the modes switched on in the Sounds menu:
-  // - setting: the page's background loop, quieter while the child reads; off while paused, picking the page, or once
-  //   the page's last line is done (waiting for the turn; the next page starts its own)
-  // - effects 'line': a line's effect when the line starts; 'word': when its word is said (by the child, heard by the
-  //   mic; or in a narrated clip, at the word's place in it: position in the line x clip length)
-  // - cues: page turned, book finished, "We want to see the book too!"
+  // Sound effects, in the modes picked in the Sounds menu (sounds.js)
   const [modes, setModes] = useState(loadModes)
-  const modesRef = useRef(modes) // for goTo and onText, which hold old renders
+  const modesRef = useRef(modes)
   useEffect(() => { modesRef.current = modes; saveModes(modes) }, [modes])
-  const cuesRef = useRef({}) // { turn, end, ask } from /sounds/cues
+  const cuesRef = useRef({})
   useEffect(() => {
     if (modes.cues && !cuesRef.current.turn) getJson('/sounds/cues').then((c) => { cuesRef.current = c }).catch((e) => console.log('[sfx] cues failed:', e))
   }, [modes.cues])
   useEffect(() => stopAll, []) // leaving stops everything
   const sounds = page?.sounds
-  // this page's sounds and the next page's, so a page's loop is fetched and decoded before the reader reaches it
+  // preload this page's and the next page's sounds
   const nextSounds = pages?.[index + 1]?.sounds
   useEffect(() => {
     preload([sounds, nextSounds].flatMap((s) => [s?.setting, ...Object.values(s?.lines ?? {})]))
   }, [sounds, nextSounds])
   useEffect(() => { setLoop(modes.setting && !paused && !confirm && !turnWait && !finished ? sounds?.setting ?? null : null) }, [modes.setting, paused, confirm, turnWait, finished, sounds])
-  useEffect(() => { duck(!!current && !voiceOf(current) && !turnWait && !finished) }, [current, turnWait, finished]) // eslint-disable-line react-hooks/exhaustive-deps -- voiceOf follows cast
-  const wordSound = useRef(null) // { sound, word, narrated, at } of the current line, until played
+  useEffect(() => { duck(!!current && !voiceOf(current) && !turnWait && !finished) }, [current, turnWait, finished]) // eslint-disable-line react-hooks/exhaustive-deps
+  const wordSound = useRef(null) // pending word-timed effect
   useEffect(() => {
     const sound = sounds?.lines?.[line]
     wordSound.current = null
@@ -509,20 +478,20 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     const word = words(sound.word)[0]
     const all = words(current.Dialogue)
     wordSound.current = { sound, word, narrated: !!voiceOf(current), at: Math.max(0, all.indexOf(word)) / all.length }
-  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps -- once per line; a mode change applies from the next line
+  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (finished && modes.cues) playEffect(cuesRef.current.end, 'cue: book finished') }, [finished]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (askBook && modes.cues) playEffect(cuesRef.current.ask, 'cue: see the book') }, [askBook]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The follow-up question is read aloud when tapped
+  // Tap the question to hear it
   const questionAudio = useRef(null)
   useEffect(() => {
     if (!question) return
-    questionAudio.current = new Audio(ttsUrl(question, cast.Narrator || 'Aoede')) // starts loading now, so the tap plays sooner
+    questionAudio.current = new Audio(ttsUrl(question, cast.Narrator || 'Aoede'))
     return () => questionAudio.current.pause()
   }, [question])
   function playQuestion() {
     const audio = questionAudio.current
-    audio.currentTime = 0 // tapping again replays from the start
+    audio.currentTime = 0
     audio.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] play failed:', e) })
   }
 
@@ -537,20 +506,19 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
   function playNarrator() {
     narrator.play().catch((e) => { if (e.name !== 'AbortError') console.log('[tts] play failed:', e) })
   }
-  // A voiced line is read aloud in its character's voice when it becomes current, then moves on to next line.
+  // Read voiced lines aloud, then move on
   useEffect(() => {
     if (!voiceOf(current)) return
     narrator.src = ttsUrl(current.Dialogue, voiceOf(current))
     narrator.onended = narrator.onerror = () => lineDoneRef.current()
     if (!pausedRef.current) playNarrator()
     return () => {
-      narrator.onended = narrator.onerror = null // the next line reuses the element: don't let this one move it on
+      narrator.onended = narrator.onerror = null
       narrator.pause()
     }
   }, [current])
 
-  // The voiced line's progress bar: set straight on the element each frame (no re-render); 0 at the start and once
-  // the clip ends, so it starts empty for the next line. Reader lines have no bar.
+  // Voiced line's progress bar, set each frame without a re-render
   const barRef = useRef(null)
   useEffect(() => {
     if (!voiceOf(current)) return
@@ -558,7 +526,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     const tick = () => {
       const { currentTime: t, duration: d, ended } = narrator
       if (barRef.current) barRef.current.value = ended || !Number.isFinite(d) || !d ? 0 : t / d
-      const ws = wordSound.current // word-timed effect: reached the word's place in the clip
+      const ws = wordSound.current
       if (ws?.narrated && Number.isFinite(d) && d && t / d >= ws.at) {
         wordSound.current = null
         playEffect(ws.sound, `narrated "${ws.word}" at ${Math.round(ws.at * 100)}%`)
@@ -569,12 +537,12 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
     return () => cancelAnimationFrame(frame)
   }, [current])
 
-  // Pause/Play holds the voiced line where it is (cached or fresh clip alike: /tts sends a whole WAV)
+  // Pause/Play the voiced line
   useEffect(() => {
     if (!voiceOf(current)) return
     if (paused) narrator.pause()
-    else if (!narrator.ended) playNarrator() // an already-finished last line isn't replayed
-  }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps -- only on toggle; line changes are handled above
+    else if (!narrator.ended) playNarrator()
+  }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { lineRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [current, showText])
 
@@ -620,7 +588,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
         <div className="reader-text">
           {showText && (page.text.length ? page.text.map((l, i) => (
             <div key={i} ref={i === line ? lineRef : null}
-              className={`reader-line${voiceOf(l) ? ' reader-narrator' : ''}${i === line && !turnWait && !finished ? ' reader-current' : ''}`} /* no highlight once the page's last line is done */>
+              className={`reader-line${voiceOf(l) ? ' reader-narrator' : ''}${i === line && !turnWait && !finished ? ' reader-current' : ''}`}>
               <span className="reader-speaker">{l.Character}</span>
               <p>{l.Dialogue}</p>
             </div>
@@ -634,7 +602,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
           )}
         </div>
       )}
-      {/* the line cue (bar / mic), centered in the space below the header (and the text, when shown) */}
+      {/* line cue */}
       <div className="reader-stage">
         {agents.length > 0 && (
           <div className="reader-cast-wrap">
@@ -658,7 +626,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
           <div className="reader-cue" role="status">
             {voiceOf(current) ? (
               <>
-                {/* heads-up while the app speaks, when the line after this one (same page) is the reader's */}
+                {/* next line is the reader's */}
                 {page.text[line + 1] && !voiceOf(page.text[line + 1]) && <p className="reader-cue-note">Your line is coming up.</p>}
                 <progress ref={barRef} className="reader-tts" max={1} value={0} aria-label={`${current.Character} speaking`} />
               </>
@@ -667,7 +635,7 @@ export default function Book({ id, cast, onBack, startPage = 0 }) {
         )}
         {finished && <button type="button" className="btn btn-primary" onClick={leave}>Back to Library</button>}
       </div>
-      {/* at the bottom, above the camera */}
+      {/* above the camera */}
       {pages && (
         <div className="reader-controls">
           <button type="button" aria-label="Previous page" disabled={index === 0} onClick={() => goPage(index - 1)}>{PrevPageIcon}</button>

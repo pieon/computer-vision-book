@@ -14,13 +14,13 @@ export const PrevIcon = icon(<><path d="M19 20L9 12l10-8z" /><path d="M5 19V5" /
 export const PlayIcon = icon(<path d="M6 4l14 8-14 8z" />)
 export const PauseIcon = icon(<path d="M7 4v16M17 4v16" />)
 export const NextIcon = icon(<><path d="M5 4l10 8-10 8z" /><path d="M19 5v14" /></>)
-// arched arrows (a page flipping over): left end for the previous page, right end for the next
+// arched arrows for previous / next page
 export const PrevPageIcon = icon(<><path d="M20 16a8 8 0 0 0-16 0" /><path d="M1 13l3 3 3-3" /></>)
 export const NextPageIcon = icon(<><path d="M4 16a8 8 0 0 1 16 0" /><path d="M17 13l3 3 3-3" /></>)
 export const MicIcon = icon(<><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" /></>)
 export const FlagIcon = icon(<path d="M5 21V4h11l-2 4 2 4H5" />) // outlined; CSS fills it when flagged
 
-// Grey head-and-shoulders placeholder for someone with no picture (the Narrator on the Cast screen); filled, so not icon()
+// head-and-shoulders placeholder (filled, so not icon())
 export const PersonSilhouette = ({ className }) => (
   <svg className={className} viewBox="0 0 56 56" aria-hidden="true">
     <circle cx="28" cy="21" r="10" />

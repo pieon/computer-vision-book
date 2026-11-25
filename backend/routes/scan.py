@@ -1,7 +1,5 @@
-"""POST a photo to /scan?book=<id>&n=<page index, 0 = cover> and it's unwarped, OCR'd and saved as that page of the
-book in MongoDB; several pages may be sent at once. Page images go to output/books/<id>/. Replies {"page": "PageOne", "book": <the whole book>, "times": {step: seconds}};
-times are also printed per scan. The reader's page-turn routes (/turn...) are in turn.py; it shares this file's unwarp
-model, timed() and version_paths()."""
+"""POST /scan?book=<id>&n=<page>: unwarp, OCR and save a photo as that page; several at once are fine.
+Images go to output/books/<id>/."""
 import os
 import re
 import shutil
@@ -42,14 +40,12 @@ def timed(times, step):
         times[step] = round(time.perf_counter() - start, 3)
 
 
-# ponytail: the torch model is used one photo at a time; drop this lock if parallel inference is shown to be safe
+# ponytail: one photo at a time through the torch model
 unwarp_lock = threading.Lock()
 
 
 def image_name(book_id, n):
-    """File name for page n's image: page_<n+1>.png by position, so a retry of the same page overwrites it. After
-    pages were deleted or reordered (Pages list, books.py) that name may belong to another page; then the first free
-    page_<n+1>_<k>.png. Deterministic for the same book state, so a retry still lands on the same file."""
+    """Image file name for page n: page_<n+1>.png, or the first free page_<n+1>_<k>.png"""
     doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
     pages = doc["book"][0]["Book"]["Pages"] if doc else {}
     own = pages.get(page_key(n), {}).get("img")
@@ -61,9 +57,7 @@ def image_name(book_id, n):
 
 
 def straighten(path, corners):
-    """Cut the book out of the photo at `path` by its four corners (8 fractions of the photo: x, y per corner, as the
-    Scanner's dots give them) and warp it to a flat, upright rectangle, in place. The corners can come in any order. A
-    degenerate quad (an edge under 50 px) leaves the photo as it is."""
+    """Warp the book in `path` to an upright rectangle by its four corners (fractions), in place"""
     img = cv2.imread(path)
     h, w = img.shape[:2]
     pts = np.float32(corners).reshape(4, 2) * [w, h]
@@ -82,11 +76,8 @@ def straighten(path, corners):
 
 
 def add_page(book_id, n, photo, times, corners=None):
-    """(corners: the book's four corners in the photo, see straighten; None = use the photo as sent.)
-    Unwarp + OCR one photo and save it as page `n` of the book (0 = cover). Several pages can be in here at once:
-    unwarp takes turns (unwarp_lock) and OCR, the slow part, runs in parallel; only the DB update takes the book lock.
-    Nothing is saved to the DB unless OCR succeeds. Fills `times` with seconds per step, so even a failed page shows
-    where the time went. (None, None) if the book was deleted meanwhile."""
+    """Unwarp + OCR one photo and save it as page `n`; OCR runs in parallel, the DB step takes the lock.
+    Fills `times`. (None, None) if the book was deleted meanwhile."""
     if book_id in deleted:  # cancelled while this page waited: skip the unwarp and OCR
         return None, None
     img_dir = os.path.join(IMG_DIR, book_id)
@@ -104,19 +95,17 @@ def add_page(book_id, n, photo, times, corners=None):
     with timed(times, "ocr"):
         text = ocr(os.path.join(img_dir, img))
     key, book = commit_page(book_id, n, img, text, times)
-    if key:  # its sound effects and narrator clips are made in the background (the Library shows the progress)
+    if key: # sounds and clips in the background
         prepare_later(book_id, book[0]["Book"]["Pages"][key])
     return key, book
 
 
 def commit_page(book_id, n, img, text, times):
-    """Put page `n` into the book doc. Pages can arrive in any order: `texts` has one slot per page (None until that
-    page is done), and Pages is rewritten in page order, which the reader and page matching rely on.
-    If page n-1 isn't done yet, page n's speakers are worked out without it as context."""
+    """Put page `n` into the book doc, in page order, whatever order pages arrive in"""
     with timed(times, "wait"):  # another page is updating this book's doc
         lock.acquire()
     try:
-        if book_id in deleted:  # deleted while this page was processing: don't let the upsert bring it back
+        if book_id in deleted: # deleted meanwhile: don't re-create it
             shutil.rmtree(os.path.join(IMG_DIR, book_id), ignore_errors=True)  # this page's image re-created it
             return None, None
         with timed(times, "db_read"):
@@ -127,7 +116,7 @@ def commit_page(book_id, n, img, text, times):
         pages = doc["book"][0]["Book"]["Pages"] if doc else {}
 
         with timed(times, "speakers"):  # usually instant; slow when it falls back to the LLM
-            # ponytail: earlier pages keep the speakers they got when added; rebuild all pages if late-found names matter]
+            # ponytail: earlier pages keep their speakers; rebuild all if late-found names matter
             names = find_names([t for t in texts if t])  # all pages' text so far, so names come from the whole book
             key = page_key(n)
             pages[key] = build_page(img, text, names, (n and texts[n - 1]) or "")
@@ -152,9 +141,7 @@ def report(book_id, label, times):
 
 
 def version_paths(book_id, img):
-    """Reading versions of page image `img`, newest first: <book>/alt/<img stem>_<YYYYmmdd-HHMMSS-micro>.jpg, one per
-    reading photo the user cropped after a decision-model turn (add_version), as taken. Older ones are .png
-    (unwarped). /turn tries them, against the photo as taken, when the scans fail."""
+    """Reading versions of page image `img`, newest first (for /turn when the scans fail)"""
     stem = os.path.splitext(os.path.basename(img))[0]
     folder = os.path.join(IMG_DIR, book_id, "alt")
     mine = re.compile(re.escape(stem) + r"_\d{8}-\d{6}-\d{6}\.(png|jpg)")  # not page_003_1's versions for page_003
@@ -163,9 +150,7 @@ def version_paths(book_id, img):
 
 
 def add_version(book_id, n, photo, times):
-    """Save a reading photo (already cropped to the book by the user) as another version of page n's image, as taken:
-    not unwarped, so it keeps the tilt and distance the reading camera sees. No OCR, no DB change. Returns its path;
-    None if the book has no page n."""
+    """Save a cropped reading photo as another version of page n, not unwarped. Returns its path, or None."""
     doc = books.find_one({"_id": book_id}, {"book": 1}) or {}
     pages = list(doc["book"][0]["Book"]["Pages"].values()) if doc else []  # reader order, same as turn.py
     if n >= len(pages):
@@ -180,8 +165,7 @@ def add_version(book_id, n, photo, times):
 
 @router.post("/scan/version")
 async def scan_version(request: Request, book: str = Query(pattern=BOOK_ID), n: int = Query(ge=0, le=999)):
-    """The reader's photo of page n (cropped to the book by the user), saved as another fingerprint version of it.
-    Replies {"saved": path, "times": {step: seconds}}."""
+    """Save the reader's photo of page n as another fingerprint version. Replies {"saved", "times"}."""
     times = {}
     with timed(times, "upload"):
         photo = await request.body()
@@ -200,8 +184,7 @@ async def scan_version(request: Request, book: str = Query(pattern=BOOK_ID), n: 
 @router.post("/scan")
 async def scan(request: Request, book: str = Query(pattern=BOOK_ID), n: int = Query(ge=0, le=999),
                corners: Optional[str] = Query(None, pattern=r"^[0-9.]+(,[0-9.]+){7}$")):
-    """corners: the book's corners in the photo, "x,y" x4 as fractions (the Scanner's dots): it's straightened to them
-    before the unwarp."""
+    """corners: "x,y" x4 fractions; the photo is straightened to them first"""
     times = {}
     with timed(times, "upload"):  # receiving the photo from the app
         photo = await request.body()

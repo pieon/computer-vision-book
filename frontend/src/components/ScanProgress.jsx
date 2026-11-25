@@ -1,7 +1,6 @@
 import { progress } from '../scanQueue.js'
 
-// A scanned book's preparation as one bar: each page's OCR, then its sounds and narrator clips, weighted by how long
-// each takes (scanQueue.js fraction()). Nothing once the book is ready. The caller re-renders with useScanQueue().
+// A scanned book's preparation as one bar (scanQueue.js fraction()); nothing once ready
 export default function ScanProgress({ id }) {
   const p = progress(id)
   if (!p || p.ready) return null

@@ -3,8 +3,7 @@ import { request } from '../api.js'
 
 const OUT = 256 // px, the saved square crop
 
-// Full-screen crop of a character's face from a page picture: pinch / wheel / slider to zoom, drag to move, ‹ › for
-// another page. Use saves what's inside the square frame (PUT /books/<id>/face) and calls onDone(img file).
+// Crop a character's face from a page: pinch / wheel / slider to zoom, drag to move. Use saves it.
 export default function Cropper({ id, name, pages, start, onDone, onCancel }) {
   const [page, setPage] = useState(Math.max(0, pages.indexOf(start)))
   const [view, setView] = useState({ x: 0, y: 0, s: 1 })

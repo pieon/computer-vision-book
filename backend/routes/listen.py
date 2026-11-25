@@ -33,7 +33,7 @@ async def listen(ws: WebSocket):
     except Exception as e:  # e.g. missing key or Deepgram refused; show it, close the socket
         print(f"listen failed: {e!r}")
         await ws.close(code=1011)
-    finally:  # the socket lives exactly as long as the book is open: that's one reading session for the Home chart
-        # ponytail: no socket (mic/camera denied) = reading not counted; move to a POST from Book.jsx if that matters
+    finally: # one socket = one reading session
+        # ponytail: no mic = reading not counted
         minutes = (datetime.now(timezone.utc) - start).total_seconds() / 60
         reading.insert_one({"bookId": ws.query_params.get("book", ""), "start": start, "minutes": minutes})

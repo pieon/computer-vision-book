@@ -1,5 +1,5 @@
-"""Normalize OCR/answer text so formatting differences don't count as errors.
-Usage: python -m backend.pipeline.book.clean_ocr file.txt|file.csv  -> writes file_clean.txt|file_clean.csv"""
+"""Normalize OCR text so formatting doesn't count as errors.
+Usage: python -m backend.pipeline.book.clean_ocr file.txt|file.csv"""
 import csv
 import os
 import re

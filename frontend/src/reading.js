@@ -22,7 +22,7 @@ export function words(text) {
   return text.toLowerCase().replace(/-/g, ' ').replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean)
 }
 
-// The book line as word lists: as written, plus an expanded copy when expansion changed anything.
+// The line as word lists: as written, plus expanded
 export function variants(line) {
   const text = line.toLowerCase().replace(/[‘’]/g, "'")
   const expanded = expandContractions(numbersToWords(text))
@@ -30,7 +30,7 @@ export function variants(line) {
   return lists.length === 2 && lists[0].join(' ') === lists[1].join(' ') ? [lists[0]] : lists
 }
 
-// Same word, allowing one letter added, dropped or changed ("zoe"/"zoey", "said"/"sad") when the words aren't tiny;
+// Same word, allowing one letter off when the words aren't tiny
 function sameWord(a, b) {
   return a === b || (Math.min(a.length, b.length) >= 3 && Math.max(a.length, b.length) >= 4 && distance(a, b) <= 1)
 }

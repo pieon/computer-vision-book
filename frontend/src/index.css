@@ -3,7 +3,7 @@ body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background:
 pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; border-radius: 8px; }
 @keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
 
-/* Library, styled after Kindle's library. Every rule starts with .library so it can't leak into other screens. */
+/* Library */
 .library { --lib-surface: #232323; --lib-line: #3a3a3a; --lib-muted: #9a9a9a; --lib-accent: #5b9bff; --lib-danger: #ff6b6b;
   max-width: 900px; margin: 0 auto; padding-bottom: 120px; }
 .library button { background: none; border: 0; border-radius: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
@@ -23,11 +23,11 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   box-shadow: 0 2px 10px #0009; }
 .library .library-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; display: block; }
 .library .library-tag { position: absolute; top: 0; right: 0; padding: 3px 7px; background: #111; color: #eee; font-size: 0.75rem; }
-/* still processing: can't be opened; the cover dims, a spinner sits on its center */
+/* still processing */
 .library .library-cover:disabled { cursor: progress; position: relative; }
 .library .library-cover:disabled > :not(.library-busy) { opacity: 0.5; }
 .library .library-busy { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
-/* a scanned book being prepared (components/ScanProgress.jsx): in the Library under its cover, and in the Scanner's head */
+/* preparation bar (ScanProgress.jsx) */
 .scan-progress { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; color: #a1a1aa; font-size: 0.8rem; }
 .scan-progress progress { width: 100%; min-width: 120px; height: 6px; border: 0; border-radius: 3px; overflow: hidden;
   appearance: none; -webkit-appearance: none; background: #ffffff26; }
@@ -39,11 +39,11 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   display: grid; place-items: center; background: #000c; color: #fff; font-size: 0.6rem; letter-spacing: 1px; }
 .library .library-more.library-more-warn { background: #ff9f0a; color: #000; font-size: 1.1rem; font-weight: 800; letter-spacing: 0; }
 .library .library-menu .library-warn-item { color: #ff9f0a; }
-/* placeholder: white document with a blue band and the name on a dark strip, like Kindle's DOC tile */
+/* placeholder cover */
 .library .cover-doc { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: #fff; }
 .library .cover-doc-tag { margin-top: 14%; width: 70%; padding: 4% 8%; background: #4466b8; color: #fff; font-weight: 700; font-size: clamp(0.8rem, 3vw, 1.6rem); }
 .library .cover-doc-lines { flex: 1; margin: 12% 14%; background: repeating-linear-gradient(#c8c8c8 0 6px, transparent 6px 16px); }
-.library .cover-doc-name { padding: 8px 44px 8px 8px; background: #444; /* right: room for the ••• button */ color: #fff; font-size: 0.8rem; text-align: left;
+.library .cover-doc-name { padding: 8px 44px 8px 8px; background: #444; color: #fff; font-size: 0.8rem; text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* options menu: frosted rounded card over a dimmed screen */
@@ -65,7 +65,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .tabbar button:focus-visible { outline: 2px solid #5b9bff; outline-offset: 2px; }
 .tabbar .tabbar-active { background: #141414; color: #5b9bff; cursor: default; }
 
-/* Home (Home.jsx). Purple accent #9d73e0 passes the dataviz validator on the #1c1b22 card surface. */
+/* Home */
 .home { --home-surface: #1c1b22; --home-line: #34313f; --home-muted: #a29fae; --home-accent: #9d73e0; --home-track: #3a2f52;
   max-width: 640px; margin: 0 auto; padding-bottom: 120px; display: grid; gap: 16px; }
 .home .home-title { margin: 8px 0 4px; font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 2.5rem; }
@@ -84,7 +84,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .home .home-today { color: #eee; font-weight: 700; }
 .home .home-today .home-dot { outline: 2px solid #eee; outline-offset: 2px; }
 .home .home-chart { position: relative; margin-top: 8px; }
-.home > * { min-width: 0; } /* grid items may shrink below the chart's first-drawn width */
+.home > * { min-width: 0; }
 .home .home-chart svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
 .home .home-chart svg:focus-visible { outline: 2px solid var(--home-accent); outline-offset: 4px; border-radius: 4px; }
 .home .home-grid { stroke: var(--home-line); stroke-width: 1; }
@@ -99,8 +99,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .home .home-meter { height: 12px; margin-top: 12px; border-radius: 999px; background: var(--home-track); overflow: hidden; }
 .home .home-meter span { display: block; height: 100%; border-radius: 999px; background: var(--home-accent); }
 
-/* Scanner (Scanner.jsx), same dark surfaces and purple accent as Home. The page is exactly one screen tall:
-   the camera box takes the space between header and controls, at the camera's own shape (--ratio). */
+/* Scanner: one screen tall, camera box at the camera's shape (--ratio) */
 .scan { --scan-line: #34313f; --scan-muted: #a29fae; --scan-accent: #9d73e0; --scan-danger: #ff6b6b;
   height: calc(100dvh - 32px); max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
 .scan button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
@@ -118,13 +117,13 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-view { position: relative; overflow: hidden; border-radius: 20px; background: #000; border: 1px solid var(--scan-line);
   width: min(100cqw, calc(100cqh * var(--ratio))); height: min(100cqh, calc(100cqw / var(--ratio))); }
 .scan .scan-view video, .scan .scan-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-.scan .scan-view video { transform: scaleX(-1); } /* mirrored, same as snap() */
-.scan .scan-view video.unmirrored { transform: none; } /* the back camera: already the right way round */
-/* Scanner setup: front / back camera, a two-button switch between Cancel and Confirm */
+.scan .scan-view video { transform: scaleX(-1); } /* mirrored, like snap() */
+.scan .scan-view video.unmirrored { transform: none; } /* back camera */
+/* camera switch */
 .scan .scan-camera { display: flex; padding: 3px; border-radius: 999px; background: #ffffff14; }
 .scan .scan-camera button { padding: 8px 14px; border-radius: 999px; color: var(--scan-muted); font-weight: 600; white-space: nowrap; }
 .scan .scan-camera button[aria-pressed="true"] { background: #ffffff26; color: #fff; }
-/* setup band: outside it is darker (cut off every photo); the lines are drag handles with a tall touch area */
+/* setup band and its drag lines */
 .scan-shade { position: absolute; left: 0; right: 0; background: #000a; pointer-events: none; }
 .scan-quad { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 .scan-quad path + path { stroke: var(--scan-accent, #9d73e0); stroke-width: 3; }
@@ -153,7 +152,7 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .scan .scan-toast { position: fixed; left: 50%; bottom: 120px; z-index: 10; transform: translateX(-50%); padding: 10px 20px;
   border-radius: 999px; background: rgba(64, 64, 64, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid #ffffff1f; color: #fff; font-weight: 600; box-shadow: 0 8px 30px #000a; }
-/* a phone: the camera switch gets its own row above Cancel / Confirm, so nothing is pushed off the screen */
+/* phone: camera switch on its own row */
 @media (max-width: 600px) {
   .scan { height: calc(100dvh - 16px); }
   .scan .scan-head h1 { font-size: 1.5rem; }
@@ -161,19 +160,19 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
   .scan .scan-guide-text { font-size: 0.95rem; }
   .scan .scan-controls { grid-template-columns: 1fr 1fr; row-gap: 8px; border-radius: 24px; min-height: 0; }
   .scan .scan-controls .scan-camera { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
-  .scan .scan-controls > div:empty { display: none; } /* the empty middle cell while scanning */
+  .scan .scan-controls > div:empty { display: none; }
 }
 
-/* Book reader: page text, camera as a small mirrored window in the bottom-right corner */
+/* Book reader */
 .reader { max-width: 900px; margin: 0 auto; min-height: calc(100dvh - 32px); display: flex; flex-direction: column; } /* 32px: body padding */
 .reader .reader-stage { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
 .reader .reader-text { font-family: Georgia, "Times New Roman", serif; font-size: 1.4rem; line-height: 1.6; margin-bottom: 24px; }
-/* one card per line, speaker on top; characters get an accent bar, the narrator stays plain */
+/* one card per line */
 .reader .reader-line { padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; background: #1c1c1c; border-left: 4px solid #5b9bff; opacity: 0.55; transition: opacity 0.2s, background 0.2s; }
 .reader .reader-line.reader-narrator { border-left-color: #555; }
 .reader .reader-line.reader-current { opacity: 1; background: #26324a; }
 .reader .reader-line p { margin: 0; }
-/* the question is a button (tap to hear it) but looks like a line; the other borders reset, the left accent kept */
+/* the question: a button that looks like a line */
 .reader .reader-question { display: block; width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer;
   border-top: 0; border-right: 0; border-bottom: 0; border-left-color: #f0b429; }
 .reader .reader-question:hover { background: #2e3b57; }
@@ -184,14 +183,14 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .reader .reader-cam video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .reader .reader-cam span { position: relative; padding: 8px; text-align: center; }
 /* player-style controls: previous line, pause/play, next line */
-.reader .reader-controls { display: flex; justify-content: center; align-items: center; gap: 24px; margin: 16px 0 calc(min(200px, 35vw) * 0.75 + 16px); } /* clears the camera (.reader-cam) */
+.reader .reader-controls { display: flex; justify-content: center; align-items: center; gap: 24px; margin: 16px 0 calc(min(200px, 35vw) * 0.75 + 16px); } /* clears the camera */
 .reader .reader-controls button { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
   border: 0; background: #26324a; color: #fff; }
 .reader .reader-controls .reader-play { width: 64px; height: 64px; background: #5b9bff; }
 .reader .reader-controls button:disabled { opacity: 0.35; }
 
-/* Edit Book (BookEditor.jsx): page photo, then one row per line: speaker, text, move/delete */
-/* Edit panel over the reader (Book.jsx); above the camera, controls and library backdrop (z 20) */
+/* Edit Book */
+/* Edit panel over the reader */
 .reader-edit { position: fixed; inset: 0; z-index: 30; overflow-y: auto; background: var(--bs-body-bg, #212529); }
 .editor .editor-photo { display: block; max-width: 100%; max-height: 40vh; margin: 0 auto 16px; border-radius: 8px; }
 .editor .editor-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #ffffff1f; }
@@ -199,26 +198,26 @@ pre { white-space: pre-wrap; font-size: 13px; background: #000; padding: 12px; b
 .editor .editor-line .form-control { flex: 1 1 260px; }
 .editor .editor-tools { display: flex; gap: 4px; }
 .editor .editor-tools .btn { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square */
-.editor .editor-tools svg { width: 18px; height: 18px; } /* trash icon at the arrows' size */
-/* Edit Book (page list and a page): the full width, 10px from each side (not Bootstrap's centred container) */
+.editor .editor-tools svg { width: 18px; height: 18px; }
+/* Edit Book: full width, 10px sides */
 .container.editor { max-width: none; padding-left: 10px; padding-right: 10px; }
-body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's own 16px adds to the 10px */
+body:has(.container.editor) { padding-left: 0; padding-right: 0; }
 
 .editor .editor-grip { flex: 0 0 32px; align-self: stretch; display: grid; place-items: center; min-height: 44px;
   color: #ffffff80; letter-spacing: -3px; cursor: grab; touch-action: none; user-select: none; border-radius: 6px; }
 .editor .editor-grip:hover, .editor .editor-grip:focus-visible { color: #fff; background: #ffffff14; }
 .editor .editor-line.dragging { background: #ffffff14; border-radius: 8px; }
 .editor .editor-line.dragging .editor-grip { cursor: grabbing; color: #fff; }
-.editor .editor-grip[aria-disabled="true"] { opacity: .35; cursor: default; } /* pages still being prepared */
+.editor .editor-grip[aria-disabled="true"] { opacity: .35; cursor: default; }
 .editor .pages-row { align-items: center; flex-wrap: nowrap; }
-.editor .pages-row .editor-tools { margin-right: 10px; } /* the delete button, off the edge */
+.editor .pages-row .editor-tools { margin-right: 10px; }
 .editor .pages-open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0;
   background: none; color: inherit; text-align: left; }
 .editor .pages-unknown { display: block; width: fit-content; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
-  background: #ff9f0a; color: #000; font-size: 0.8rem; font-weight: 600; } /* same orange as the Library "!" */
+  background: #ff9f0a; color: #000; font-size: 0.8rem; font-weight: 600; }
 .editor .pages-unknown-note { color: #ff9f0a; }
 .editor .pages-thumb { width: 64px; height: 84px; object-fit: cover; border-radius: 6px; background: #1c1c1c; flex: none; }
-.editor .editor-line .form-select.editor-unknown { background-color: #ff9f0a; color: #000; font-weight: 600; } /* speaker still to fix */
+.editor .editor-line .form-select.editor-unknown { background-color: #ff9f0a; color: #000; font-weight: 600; }
 
 /* Reader header: To Library | Page N | Show text + flag */
 .reader .reader-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -238,23 +237,22 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .editor .pages-flag svg { width: 18px; height: 18px; }
 .editor .pages-flag-note { color: #ff453a; }
 
-/* Cast (who reads?): one row per character, its voice picker and a preview button */
-/* Who reads? (Cast.jsx): character rows with their first page and a box; a ring of voice orbs pinned to the bottom */
+/* Cast (Who reads?) */
 .cast { padding-bottom: 195px !important; } /* clears the ring */
-/* one card per character (Cast.jsx): picture on the left, the voice's circle on the right */
+/* character cards */
 .cast .cast-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
 .cast .cast-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 190px; border-radius: 16px;
   background: #ffffff0d; border: 1px solid #ffffff1f; overflow: hidden; transition: border-color .2s, background .2s; }
 .cast .cast-card.picked { border-color: #5b9bff; background: #5b9bff1a; }
 .cast .cast-face { position: relative; display: block; padding: 0; border: 0; background: #ffffff0d; color: inherit; overflow: hidden; }
 .cast .cast-page { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
-.cast .cast-silhouette { fill: currentColor; color: #ffffff59; padding: 18% 18% 28%; } /* the Narrator's placeholder picture */
+.cast .cast-silhouette { fill: currentColor; color: #ffffff59; padding: 18% 18% 28%; }
 .cast .cast-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px; background: linear-gradient(transparent, #000c);
   color: #fff; font-weight: 700; text-align: left; overflow-wrap: break-word; }
 .cast .cast-face-badge { position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
   font-size: 13px; background: #5b9bff; color: #fff; box-shadow: 0 0 0 2px #0006; }
 .cast .cast-voice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 12px 8px; cursor: pointer; }
-/* Cast: crop a character's picture from a page (components/Cropper.jsx) */
+/* face cropper */
 .cropper { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
 .cropper-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
 .cropper-bar .form-range { flex: 1; }
@@ -265,12 +263,12 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .cropper-hint { margin: 0 0 12px; text-align: center; font-size: .85rem; opacity: .7; }
 .cast .cast-box { flex: none; width: 104px; height: 104px; border-radius: 50%; border: 2px dashed #ffffff40; background: none; display: grid; place-items: center; padding: 0; transition: border-color .2s, box-shadow .2s; }
 .cast .cast-box.ready { border-style: solid; border-color: #5b9bff; box-shadow: 0 0 12px #5b9bff80; }
-.cast .cast-box.filled { border-color: transparent; box-shadow: none; } /* the orb is the target: no dashed circle behind it */
+.cast .cast-box.filled { border-color: transparent; box-shadow: none; }
 .cast .cast-box-name { font-size: .75rem; color: #ffffffb0; text-align: center; line-height: 1.2; }
 .cast .cast-play { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff40; background: none; color: inherit; display: grid; place-items: center; padding: 0; }
 .cast .cast-play svg { width: 18px; height: 18px; }
 .cast .cast-hint { margin: 12px 0 0; font-size: .9rem; color: #ffffff99; text-align: center; }
-/* Grok-style glowing orb in its voice color (--c), --s across, shaped by --r, with two blinking eyes */
+/* voice orb: color --c, size --s, shape --r */
 .cast-orb { display: block; position: relative; width: calc(var(--s, 56px) * var(--w, 1)); height: var(--s, 56px); border-radius: var(--r, 50%);
   background: radial-gradient(circle at 32% 28%, #fff9 0, var(--c) 42%, color-mix(in srgb, var(--c) 55%, #000) 100%);
   box-shadow: 0 0 18px 2px color-mix(in srgb, var(--c) 60%, transparent), inset 0 -6px 14px #0004; }
@@ -279,7 +277,7 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
   border-radius: 99px; background: #15171ae6; transition: top .2s; animation: cast-blink 5s var(--d, 0s) infinite; }
 .cast-orb::before { left: calc(50% - var(--s, 56px) * .2); }
 .cast-orb::after { right: calc(50% - var(--s, 56px) * .2); }
-.cast-ring-item.picked .cast-orb::before, .cast-ring-item.picked .cast-orb::after { top: 30%; } /* looks up when picked */
+.cast-ring-item.picked .cast-orb::before, .cast-ring-item.picked .cast-orb::after { top: 30%; }
 @keyframes cast-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
 @media (prefers-reduced-motion: reduce) { .cast-orb::before, .cast-orb::after { animation: none; } }
 .cast-orb-flying { position: fixed; z-index: 50; pointer-events: none; }
@@ -296,7 +294,7 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .cast .cast-ring-arrow.left { left: 12px; }
 .cast .cast-ring-arrow.right { right: 12px; }
 
-/* how far the voiced line's clip has played (Book.jsx); not shown on the reader's own lines */
+/* voiced line progress */
 .reader .reader-cue { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; min-height: 120px; justify-content: center; }
 .reader .reader-cue-note { margin: 0; color: #5b9bff; font-weight: 600; font-size: 1.4rem; }
 /* the reader's own line: a mic instead of the bar */
@@ -307,10 +305,9 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .reader .reader-tts::-webkit-progress-value { background: #5b9bff; }
 .reader .reader-tts::-moz-progress-bar { background: #5b9bff; }
 
-/* Edit Book (PageList.jsx): the title is a button that turns into a text box */
+/* editable title */
 
-/* Book.jsx: after a decision-model turn, "which page are you on?" (PageCarousel); before leaving, marking the book in
-   each of those photos (CropPhotos). Over the reader like the Edit panel. */
+/* PagePick and CropPhotos overlays */
 .page-pick, .crop-photos { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; justify-content: center;
   align-items: center; gap: 12px; padding: 16px; background: var(--bs-body-bg, #212529); text-align: center; }
 .page-pick-row { display: flex; gap: 16px; width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; padding: 8px 30%; }
@@ -319,13 +316,12 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .page-pick-item.guess { border-color: #5b9bff; }
 .page-pick-item img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: 6px; }
 .page-pick-item span { display: block; margin-top: 6px; font-weight: 600; }
-/* the view is exactly the photo's size, so the band lines' fractions are fractions of the photo */
-.crop-photos-view { position: relative; overflow: hidden; border-radius: 12px; background: #000; } /* black: corners uncovered by the turn */
+/* view = photo size */
+.crop-photos-view { position: relative; overflow: hidden; border-radius: 12px; background: #000; }
 .crop-photos-view img { display: block; max-width: 100%; max-height: 70dvh; }
 .crop-photos-buttons { display: flex; gap: 12px; }
 
-/* Book.jsx: the voice agents picked in Cast, lined up in the middle of the reader; the one reading the current line
-   grows. While waiting for a turn and ORB can't see the book, one bubble over them asks to see it and they look up. */
+/* reader voice row */
 .reader .reader-stage { gap: 20px; }
 .reader-cast-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 12px; }
 .reader-cast { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 20px; padding-top: 20px; }
@@ -334,15 +330,15 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .reader-cast-item.speaking { z-index: 1; transform: scale(1.5); }
 .reader-cast-item.speaking .cast-orb { box-shadow: 0 0 30px 8px color-mix(in srgb, var(--c) 75%, transparent), inset 0 -6px 14px #0004; }
 .reader-cast-name { max-width: 110px; font-size: .75rem; color: #ffffffb0; line-height: 1.2; overflow-wrap: break-word; }
-.reader-cast-item.speaking .reader-cast-name { font-size: .55rem; color: #fff; } /* stays about the same size once scaled */
-.reader-cast.looking .cast-orb::before, .reader-cast.looking .cast-orb::after { top: 30%; } /* looking up at the bubble */
+.reader-cast-item.speaking .reader-cast-name { font-size: .55rem; color: #fff; }
+.reader-cast.looking .cast-orb::before, .reader-cast.looking .cast-orb::after { top: 30%; }
 .reader-cast-bubble { position: relative; margin: 0; padding: 10px 18px; border-radius: 18px; background: #fff; color: #1d1f23;
   font-weight: 700; font-size: 1.1rem; animation: guide-in .3s ease-out; }
 .reader-cast-bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; margin-left: -9px;
   border: 9px solid transparent; border-bottom: 0; border-top-color: #fff; }
 @media (prefers-reduced-motion: reduce) { .reader-cast-item { transition: none; } .reader-cast-bubble { animation: none; } }
 
-/* Book.jsx: the Sounds menu (which sound-effect modes are on, to compare them) */
+/* Sounds menu */
 .reader-sounds { position: relative; }
 .reader-sounds summary { cursor: pointer; padding: 4px 10px; border: 1px solid #ffffff40; border-radius: 999px; list-style: none; }
 .reader-sounds summary::-webkit-details-marker { display: none; }
@@ -353,18 +349,17 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
 .reader-sounds-menu fieldset { margin: 0; padding: 0; border: 0; }
 .reader-sounds-menu legend { margin: 0 0 4px; font-size: .8rem; color: #ffffffa0; float: none; width: auto; }
 
-/* Edit Book: the page's sound effects to review (BookEditor.jsx PageSounds) */
+/* Edit Book sounds */
 .editor-sounds { margin-top: 24px; padding-top: 16px; border-top: 1px solid #ffffff1f; }
 .editor-sound { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ffffff14; }
 .editor-sound-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.editor-sound .btn { flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; } /* square, like the line tools */
+.editor-sound .btn { flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; }
 .editor-sound .btn svg { width: 18px; height: 18px; }
-.editor-sound .btn-outline-danger { margin-left: 15px; } /* apart from Play, so it is not tapped by mistake */
+.editor-sound .btn-outline-danger { margin-left: 15px; }
 
-/* Landscape (phones and iPads turned sideways): each screen goes side by side instead of one tall column. Portrait
-   keeps the layouts above. */
+/* Landscape: side by side */
 @media (orientation: landscape) {
-  /* Scanner: the camera fills the left; heading, status and the buttons (stacked) on the right */
+  /* Scanner: camera left, controls right */
   .scan { display: grid; max-width: none; column-gap: 16px; row-gap: 10px;
     grid-template-columns: minmax(0, 1fr) minmax(200px, 260px); grid-template-rows: auto auto auto 1fr;
     grid-template-areas: "stage head" "stage status" "stage controls" "stage ."; }
@@ -377,17 +372,17 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
   .scan .scan-cancel, .scan .scan-done { justify-self: auto; text-align: center; }
   .scan .scan-camera button { flex: 1; }
 
-  /* Reader: the text on the left (scrolls); the voices, cue and controls on the right; the camera window bottom-left */
+  /* Reader: text left, stage right */
   .reader { display: grid; max-width: 1200px; height: calc(100dvh - 32px); min-height: 0; column-gap: 24px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas: "head head" "text stage" "text controls"; }
   .reader > * { grid-column: 1 / -1; } /* loading / error lines */
   .reader .reader-head { grid-area: head; }
   .reader .reader-text { grid-area: text; min-height: 0; overflow-y: auto; margin: 0;
-    padding-bottom: calc(min(160px, 22vw) * 0.75 + 24px); } /* the last line can scroll above the camera window */
-  .reader .reader-stage { grid-area: stage; min-height: 0; justify-content: safe center; } /* the speaking orb grows upward: not clipped */
+    padding-bottom: calc(min(160px, 22vw) * 0.75 + 24px); }
+  .reader .reader-stage { grid-area: stage; min-height: 0; justify-content: safe center; }
   .reader .reader-controls { grid-area: controls; margin: 12px 0 0; }
-  .reader:has(.reader-text:empty) .reader-stage { grid-column: 1 / -1; } /* Show text off: the right side takes it all */
+  .reader:has(.reader-text:empty) .reader-stage { grid-column: 1 / -1; }
   .reader:has(.reader-text:empty) .reader-controls { grid-column: 1 / -1; }
   .reader .reader-cam { left: 16px; right: auto; width: min(160px, 22vw); }
 
@@ -399,7 +394,7 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
   .library { max-width: 1100px; }
   .library .row > .col-4 { width: 20%; }
 
-  /* Edit Book (a page, not the page list): the photo stays on the left while the lines scroll on the right */
+  /* Edit Book page: photo left, lines right */
   .editor:has(> .editor-photo) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: 20px; align-items: start; }
   .editor:has(> .editor-photo) > * { grid-column: 2; }
   .editor:has(> .editor-photo) > .editor-photo { grid-column: 1; grid-row: 1 / span 50; position: sticky; top: 16px; margin: 0;
@@ -419,6 +414,6 @@ body:has(.container.editor) { padding-left: 0; padding-right: 0; } /* or body's 
   .reader .reader-mic { width: 84px; height: 84px; }
   .reader .reader-mic svg { width: 40px; height: 40px; }
   .cast { padding-bottom: 140px !important; }
-  .cast .cast-ring { height: 175px; zoom: 0.72; } /* the whole ring smaller (orbs, labels, arrows) on a short screen */
+  .cast .cast-ring { height: 175px; zoom: 0.72; } /* short screen */
   .cast .cast-card { min-height: 150px; }
 }

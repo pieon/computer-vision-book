@@ -1,5 +1,4 @@
-"""Vertex AI text-to-speech (Gemini TTS, voice Aoede), ported from CA's server/liveTTS_vertex.js.
-Needs GOOGLE_APPLICATION_CREDENTIALS, VERTEX_PROJECT_ID, VERTEX_LOCATION and VERTEX_MODEL in .env."""
+"""Vertex AI text-to-speech (Gemini TTS). Needs GOOGLE_APPLICATION_CREDENTIALS and the VERTEX_* settings."""
 import hashlib
 import io
 import os
@@ -13,7 +12,7 @@ MODEL = os.environ["VERTEX_MODEL"]
 VOICE = "Aoede"
 CACHE_DIR = os.path.join(ROOT, "output", "tts")  # one WAV per model, voice and text; served by routes/tts.py
 
-# the SDK signs requests with the service-account key named by GOOGLE_APPLICATION_CREDENTIALS
+# auth via GOOGLE_APPLICATION_CREDENTIALS
 client = genai.Client(vertexai=True, project=os.environ["VERTEX_PROJECT_ID"], location=os.environ["VERTEX_LOCATION"])
 
 
@@ -45,8 +44,8 @@ def clip_path(text, voice=VOICE):
 
 
 def clip(text, voice=VOICE):
-    """The cached clip's path, generated first if it isn't there (raises if Vertex fails).
-    ponytail: no in-flight dedupe; two first requests for one line both call Vertex"""
+    """The cached clip's path, generated if missing (raises on failure).
+    ponytail: no in-flight dedupe"""
     path = clip_path(text, voice)
     if not os.path.exists(path):
         wav = speak(text.strip(), voice)

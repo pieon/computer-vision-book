@@ -15,10 +15,10 @@ function thisWeek() {
   return DAYS.map((_, i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))
 }
 
-// The y-axis top: the busiest day rounded up to a whole minute (at least 1).
+// y-axis top: busiest day, rounded up to a minute
 const niceMax = (v) => Math.max(1, Math.ceil(v))
 
-// A simple line chart showing the user's reading time over the past week.
+// Reading time over the past week
 function ReadingChart({ minutes }) {
   const last = minutes.length - 1
   const [hover, setHover] = useState(null)
@@ -62,7 +62,7 @@ function ReadingChart({ minutes }) {
       </svg>
       {hover !== null && (
         <div className="home-tip" aria-live="polite" style={{ left: `${((hover + 0.5) / 7) * 100}%`,
-          transform: hover > 3 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)' }}>{/* beside the crosshair, inward */}
+          transform: hover > 3 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)' }}>
           <strong>{Math.round(minutes[hover])} min</strong>
           <span>{DAY_NAMES[hover]}</span>
         </div>
@@ -76,8 +76,7 @@ function ReadingChart({ minutes }) {
   )
 }
 
-// Home: this week's scanning streak, reading time, and the last book read: how much of it is read, and a tap opens it
-// where reading left off with the same voices, or at Who reads? if it was finished.
+// Home: scanning streak, reading time, and the last book read
 export default function Home({ onHome, onLibrary, onScan, onOpenBook }) {
   const [stats, setStats] = useState(null)
   const [error, setError] = useState('')
@@ -97,10 +96,10 @@ export default function Home({ onHome, onLibrary, onScan, onOpenBook }) {
   const latest = stats?.latest
   const read = latest?.read
   const unfinished = read && !read.finished
-  const page = Math.min(read?.page ?? 0, (latest?.pages ?? 1) - 1) // 0-based; within the book if pages were deleted
-  const pct = !read ? 0 : unfinished ? Math.round((page / latest.pages) * 100) : 100 // pages before this one are read
+  const page = Math.min(read?.page ?? 0, (latest?.pages ?? 1) - 1) // 0-based, within the book
+  const pct = !read ? 0 : unfinished ? Math.round((page / latest.pages) * 100) : 100
   function open() {
-    unlock() // Safari plays narration and sounds only after a tap: this one, when Who reads? is skipped
+    unlock() // Safari plays audio only after a tap
     unlockSounds()
     onOpenBook(unfinished ? { id: latest.id, cast: read.cast, page: read.page } : { id: latest.id, cast: null, page: 0 })
   }

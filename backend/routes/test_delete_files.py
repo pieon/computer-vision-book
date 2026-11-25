@@ -1,5 +1,4 @@
-"""Deleting a book drops its sound files and voice clips that no other book uses. Run from the repo root:
-python -m backend.routes.test_delete_files (needs MongoDB only; the files are fakes in temp folders)."""
+"""Deleting a book drops its unshared sounds and clips. Run: python -m backend.routes.test_delete_files"""
 import os
 import tempfile
 

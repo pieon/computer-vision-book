@@ -1,7 +1,5 @@
-"""ElevenLabs sound generation (https://elevenlabs.io/docs/api-reference/text-to-sound-effects): the same calls the
-pipeline makes of backend/clients/freesound.py (find, download), but each sound is generated from a description
-instead of searched. Switched on with SOUND_SOURCE=elevenlabs in .env (pipeline/book/sounds.py). Needs ELEVENLABS in
-.env (an API key). Each description is generated once: its id is a hash of it, and the MP3 is kept in output/sfx/."""
+"""ElevenLabs sound generation: the same find/download as freesound.py, but generated from a description.
+On with SOUND_SOURCE=elevenlabs; needs ELEVENLABS. MP3s are cached in output/sfx/ by a hash of the prompt."""
 import hashlib
 import os
 import re
@@ -11,16 +9,15 @@ from elevenlabs.client import ElevenLabs
 
 from backend.config import ROOT  # also loads .env
 
-FILE_DIR = os.path.join(ROOT, "output", "sfx")  # same folder as Freesound's downloads, served by routes/sounds.py
+FILE_DIR = os.path.join(ROOT, "output", "sfx") # shared with Freesound
 ID = re.compile(r"^el[0-9a-f]{12}$")
-# added to every description, so each sound keeps the rules Freesound's choosing step had (pipeline/book/sounds.py)
+# added to every prompt
 TAIL = {"loop": " Soft, calm ambience for a gentle children's story. No voices, no speech, no music.",
         "effect": " One short, clear sound, gentle for a children's story. No voices, no music."}
-# generations at once across the app: the account's limit, per the API's own 429 "maximum of 4 concurrent requests"
-# (tested 2026-11-25: 8 at once → 4 rejected); raise after upgrading the plan
+# generations at once: the plan's limit (429 above it); raise after upgrading
 CONCURRENT = 4
 _slots = threading.BoundedSemaphore(CONCURRENT)
-LOOP_SECONDS = 30  # the API's longest; loop=True makes it repeat without a seam
+LOOP_SECONDS = 30 # the API's max; loop=True repeats seamlessly
 _client = None
 
 
@@ -33,9 +30,7 @@ def _path(sid):
 
 
 def generate(prompt, kind):
-    """A sound for `prompt` ("gentle sea waves lapping on a sandy beach"), kind "loop" (background) or "effect", as the
-    pipeline stores it; generated the first time, then the cached file. None if the description is empty or
-    generating failed (no key, out of credits, network)."""
+    """Sound for `prompt`, kind 'loop' or 'effect'; generated once, then cached. None on failure."""
     global _client
     prompt = " ".join(str(prompt or "").split())
     if not prompt:
